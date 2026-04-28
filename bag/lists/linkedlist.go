@@ -198,6 +198,29 @@ func (l *LinkedList[T]) Clear() {
 	l.size = 0
 }
 
+// Iterator is a generic type for traversing over elements in a sequence.
+// It maintains the current position for sequential access.
+type Iterator[T any] struct {
+	curr *node[T]
+	// ...
+}
+
+// Iter returns an iterator to traverse the elements of the linked list sequentially from the beginning.
+func (l *LinkedList[T]) Iter() *Iterator[T] {
+	return &Iterator[T]{curr: l.head}
+}
+
+// Next retrieves the current element and advances the iterator to the next position. Returns false if no more elements exist.
+func (it *Iterator[T]) Next() (T, bool) {
+	if it.curr == nil {
+		var zero T
+		return zero, false
+	}
+	val := it.curr.value
+	it.curr = it.curr.next
+	return val, true
+}
+
 type SyncLinkedList[T any] struct {
 	mu sync.RWMutex
 	l  *LinkedList[T]

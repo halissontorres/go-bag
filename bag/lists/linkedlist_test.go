@@ -1,6 +1,7 @@
 package lists
 
 import (
+	"math/rand"
 	"slices"
 	"sync"
 	"testing"
@@ -417,5 +418,71 @@ func BenchmarkLinkedList_RemoveFirst_One(b *testing.B) {
 		l := NewLinkedList[int]()
 		l.AddLast(1)
 		_, _ = l.RemoveFirst()
+	}
+}
+
+// Random access pattern (realistic workload)
+func BenchmarkLinkedList_GetRandom(b *testing.B) {
+	const N = 10_000
+	l := NewLinkedList[int]()
+	for i := 0; i < N; i++ {
+		l.AddLast(i)
+	}
+	rng := rand.New(rand.NewSource(42))
+	b.ResetTimer()
+	for b.Loop() {
+		idx := rng.Intn(N)
+		_, _ = l.Get(idx)
+	}
+}
+
+// Sequential forward access (best-case cache behavior)
+func BenchmarkLinkedList_GetSequential(b *testing.B) {
+	const N = 10_000
+	l := NewLinkedList[int]()
+	for i := 0; i < N; i++ {
+		l.AddLast(i)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		for i := 0; i < N; i++ {
+			_, _ = l.Get(i)
+		}
+	}
+}
+
+// Alternating ends (worst-case for branch prediction?)
+func BenchmarkLinkedList_GetAlternating(b *testing.B) {
+	const N = 10_000
+	l := NewLinkedList[int]()
+	for i := 0; i < N; i++ {
+		l.AddLast(i)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		for i := 0; i < N; i++ {
+			idx := i % 2 * (N - 1) // alternates 0, 9999, 0, 9999...
+			_, _ = l.Get(idx)
+		}
+	}
+}
+
+func BenchmarkLinkedList_IterSequential(b *testing.B) {
+	const N = 10_000
+	l := NewLinkedList[int]()
+	for i := 0; i < N; i++ {
+		l.AddLast(i)
+	}
+	b.ResetTimer()
+	for b.Loop() {
+		it := l.Iter()
+		for {
+			val, ok := it.Next()
+			if !ok {
+				break
+			}
+			// Prevent compiler from optimizing away the loop
+			_ = val
+		}
 	}
 }
