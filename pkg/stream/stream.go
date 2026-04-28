@@ -1,6 +1,6 @@
-package streams
+package stream
 
-import "github.com/halissontorres/go-bag/bag/opts"
+import "github.com/halissontorres/go-bag/pkg/opt"
 
 // Package streams provides lazy, sequential stream processing.
 // Streams are NOT safe for concurrent use by multiple goroutines.
@@ -117,14 +117,14 @@ func (s *Stream[T]) Reduce(initial T, acc func(T, T) T) T {
 }
 
 // FindFirst returns the first element that satisfies the predicate as an Optional.
-func FindFirst[T any](s *Stream[T], pred func(T) bool) opts.Optional[T] {
+func FindFirst[T any](s *Stream[T], pred func(T) bool) opt.Optional[T] {
 	for {
 		val, ok := s.next()
 		if !ok {
-			return opts.Empty[T]()
+			return opt.Empty[T]()
 		}
 		if pred(val) {
-			return opts.Of(val)
+			return opt.Of(val)
 		}
 	}
 }

@@ -1,11 +1,11 @@
-package lists
+package list
 
 import (
 	"fmt"
 	"strings"
 	"sync"
 
-	"github.com/halissontorres/go-bag/bag/streams"
+	"github.com/halissontorres/go-bag/pkg/stream"
 )
 
 // LinkedList is a generic doubly-linked list.
@@ -249,9 +249,9 @@ func (l *LinkedList[T]) String() string {
 }
 
 // Stream returns a stream of the list elements.
-func (l *LinkedList[T]) Stream() *streams.Stream[T] {
+func (l *LinkedList[T]) Stream() *stream.Stream[T] {
 	it := l.Iter()
-	return streams.NewStream(func() (T, bool) {
+	return stream.NewStream(func() (T, bool) {
 		return it.Next()
 	})
 }

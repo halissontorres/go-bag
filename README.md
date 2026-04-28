@@ -51,21 +51,21 @@ go install github.com/halissontorres/go-bag/cmd@latest
 
 ## Quick Start
 
-Each collection lives in its own subpackage, named after the directory. Import the ones you need:
+Each collection lives in its own subpackage under `pkg/`, named after the data structure. Import the ones you need:
 
 ```go
 import (
-    "github.com/halissontorres/go-bag/bag/lists"
+    "github.com/halissontorres/go-bag/pkg/list"
 )
 ```
 
 ### Linked List
 
 ```go
-import "github.com/halissontorres/go-bag/bag/lists"
+import "github.com/halissontorres/go-bag/pkg/list"
 
 // Create from scratch or from a slice.
-l := lists.NewLinkedList[int]()
+l := list.NewLinkedList[int]()
 l.AddLast(1)
 l.AddLast(2)
 l.AddFirst(0)
@@ -98,7 +98,7 @@ for v, ok := rit.Next(); ok; v, ok = rit.Next() {
 }
 
 // Thread-safe variant — same API, protected by a sync.RWMutex.
-sl := lists.NewSyncLinkedList[int]()
+sl := list.NewSyncLinkedList[int]()
 sl.AddLast(42)
 fmt.Println(sl.String()) // [42]
 ```
@@ -106,13 +106,13 @@ fmt.Println(sl.String()) // [42]
 ### Stream
 
 ```go
-import "github.com/halissontorres/go-bag/bag/streams"
+import "github.com/halissontorres/go-bag/pkg/stream"
 
 // Build a pipeline: double every number, keep only those > 10, take the first 3.
-result := streams.Limit(
-    streams.Filter(
-        streams.Map(
-            streams.FromSlice([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
+result := stream.Limit(
+    stream.Filter(
+        stream.Map(
+            stream.FromSlice([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
             func(x int) int { return x * 2 },
         ),
         func(x int) bool { return x > 10 },
@@ -130,36 +130,36 @@ Other sources and operations:
 ch := make(chan string, 3)
 ch <- "a"; ch <- "b"; ch <- "c"
 close(ch)
-words := streams.FromChannel(ch).ToSlice() // ["a" "b" "c"]
+words := stream.FromChannel(ch).ToSlice() // ["a" "b" "c"]
 
 // Deduplicate and sort
-unique := streams.Sorted(
-    streams.Distinct(streams.FromSlice([]int{3, 1, 2, 1, 3})),
+unique := stream.Sorted(
+    stream.Distinct(stream.FromSlice([]int{3, 1, 2, 1, 3})),
 ).ToSlice() // [1 2 3]
 
 // Aggregate
-sum := streams.FromSlice([]int{1, 2, 3, 4}).
+sum := stream.FromSlice([]int{1, 2, 3, 4}).
     Reduce(0, func(a, b int) int { return a + b }) // 10
 
 // Short-circuit checks
-hasEven := streams.FromSlice([]int{1, 2, 3}).
+hasEven := stream.FromSlice([]int{1, 2, 3}).
     Any(func(x int) bool { return x%2 == 0 }) // true
 
-allPositive := streams.FromSlice([]int{1, 2, 3}).
+allPositive := stream.FromSlice([]int{1, 2, 3}).
     All(func(x int) bool { return x > 0 }) // true
 
 // FlatMap
-pairs := streams.FlatMap(
-    streams.FromSlice([]int{1, 2}),
+pairs := stream.FlatMap(
+    stream.FromSlice([]int{1, 2}),
     func(x int) []int { return []int{x, x * 10} },
 ).ToSlice() // [1 10 2 20]
 
 // FindFirst returns an Optional — present if a match is found, empty otherwise.
-opt := streams.FindFirst(
-    streams.FromSlice([]int{1, 3, 4, 6}),
+result := stream.FindFirst(
+    stream.FromSlice([]int{1, 3, 4, 6}),
     func(x int) bool { return x%2 == 0 },
 )
-if v, ok := opt.Get(); ok {
+if v, ok := result.Get(); ok {
     fmt.Println(v) // 4
 }
 ```
@@ -169,15 +169,15 @@ if v, ok := opt.Get(); ok {
 ### Optional
 
 ```go
-import "github.com/halissontorres/go-bag/bag/opts"
+import "github.com/halissontorres/go-bag/pkg/opt"
 
 // Create
-present := opts.Of(42)
-empty   := opts.Empty[int]()
+present := opt.Of(42)
+empty   := opt.Empty[int]()
 
 n := 99
-fromPtr := opts.OfPtr(&n)      // present
-fromNil := opts.OfPtr[int](nil) // empty
+fromPtr := opt.OfPtr(&n)      // present
+fromNil := opt.OfPtr[int](nil) // empty
 
 // Unwrap
 v, ok := present.Get()          // 42, true
@@ -188,14 +188,14 @@ empty.OrElse(0)                  // 0
 empty.OrElseGet(func() int { return computeDefault() })
 
 // Transform
-doubled := opts.Map(present, func(x int) int { return x * 2 }) // Optional[84]
-nested  := opts.FlatMap(present, func(x int) opts.Optional[string] {
-    return opts.Of(fmt.Sprintf("val=%d", x))
+doubled := opt.Map(present, func(x int) int { return x * 2 }) // Optional[84]
+nested  := opt.FlatMap(present, func(x int) opt.Optional[string] {
+    return opt.Of(fmt.Sprintf("val=%d", x))
 }) // Optional["val=42"]
 
 // Filter
 even := present.Filter(func(x int) bool { return x%2 == 0 }) // Optional[42]
-odd  := opts.Of(3).Filter(func(x int) bool { return x%2 == 0 }) // empty
+odd  := opt.Of(3).Filter(func(x int) bool { return x%2 == 0 }) // empty
 
 fmt.Println(present) // Optional[42]
 fmt.Println(empty)   // Optional[empty]
