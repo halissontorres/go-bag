@@ -1,6 +1,12 @@
 package lists
 
-import "sync"
+import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/halissontorres/go-bag/bag/streams"
+)
 
 // LinkedList is a generic doubly-linked list.
 type LinkedList[T any] struct {
@@ -18,13 +24,22 @@ func NewLinkedList[T any]() *LinkedList[T] {
 	return &LinkedList[T]{}
 }
 
+// NewLinkedListFromSlice creates a new list from the given slice elements.
+func NewLinkedListFromSlice[T any](slice []T) *LinkedList[T] {
+	l := NewLinkedList[T]()
+	for _, v := range slice {
+		l.AddLast(v)
+	}
+	return l
+}
+
 // Len returns the number of elements.
 func (l *LinkedList[T]) Len() int { return l.size }
 
 // IsEmpty returns whether the list is empty.
 func (l *LinkedList[T]) IsEmpty() bool { return l.size == 0 }
 
-// AddFirst inserts an element at the front (equivalent to PushFront).
+// AddFirst inserts an element at the front.
 func (l *LinkedList[T]) AddFirst(value T) {
 	n := &node[T]{value: value}
 	if l.head == nil {
@@ -38,7 +53,10 @@ func (l *LinkedList[T]) AddFirst(value T) {
 	l.size++
 }
 
-// AddLast appends an element to the end (equivalent to Append/PushBack).
+// PushFront is an alias for AddFirst.
+func (l *LinkedList[T]) PushFront(value T) { l.AddFirst(value) }
+
+// AddLast appends an element to the end.
 func (l *LinkedList[T]) AddLast(value T) {
 	n := &node[T]{value: value}
 	if l.tail == nil {
@@ -51,6 +69,12 @@ func (l *LinkedList[T]) AddLast(value T) {
 	}
 	l.size++
 }
+
+// PushBack is an alias for AddLast.
+func (l *LinkedList[T]) PushBack(value T) { l.AddLast(value) }
+
+// Append is an alias for AddLast.
+func (l *LinkedList[T]) Append(value T) { l.AddLast(value) }
 
 // RemoveFirst removes and returns the first element.
 func (l *LinkedList[T]) RemoveFirst() (T, bool) {
@@ -70,6 +94,9 @@ func (l *LinkedList[T]) RemoveFirst() (T, bool) {
 	return val, true
 }
 
+// PopFront is an alias for RemoveFirst.
+func (l *LinkedList[T]) PopFront() (T, bool) { return l.RemoveFirst() }
+
 // RemoveLast removes and returns the last element.
 func (l *LinkedList[T]) RemoveLast() (T, bool) {
 	if l.tail == nil {
@@ -87,6 +114,9 @@ func (l *LinkedList[T]) RemoveLast() (T, bool) {
 	l.size--
 	return val, true
 }
+
+// PopBack is an alias for RemoveLast.
+func (l *LinkedList[T]) PopBack() (T, bool) { return l.RemoveLast() }
 
 // First returns the first element without removing it.
 func (l *LinkedList[T]) First() (T, bool) {
@@ -198,112 +228,221 @@ func (l *LinkedList[T]) Clear() {
 	l.size = 0
 }
 
+// String returns a human-readable representation of the list, e.g. "[1, 2, 3]".
+func (l *LinkedList[T]) String() string {
+	if l.size == 0 {
+		return "[]"
+	}
+	var b strings.Builder
+	b.WriteByte('[')
+	for curr := l.head; curr != nil; curr = curr.next {
+		_, err := fmt.Fprintf(&b, "%v", curr.value)
+		if err != nil {
+			return ""
+		}
+		if curr.next != nil {
+			b.WriteString(", ")
+		}
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+// Stream returns a stream of the list elements.
+func (l *LinkedList[T]) Stream() *streams.Stream[T] {
+	it := l.Iter()
+	return streams.NewStream(func() (T, bool) {
+		return it.Next()
+	})
+}
+
 // Iterator is a generic type for traversing over elements in a sequence.
 // It maintains the current position for sequential access.
 type Iterator[T any] struct {
-	curr *node[T]
-	// ...
+	l       *LinkedList[T]
+	curr    *node[T]
+	forward bool
 }
 
 // Iter returns an iterator to traverse the elements of the linked list sequentially from the beginning.
 func (l *LinkedList[T]) Iter() *Iterator[T] {
-	return &Iterator[T]{curr: l.head}
+	return &Iterator[T]{l: l, curr: l.head, forward: true}
 }
 
-// Next retrieves the current element and advances the iterator to the next position. Returns false if no more elements exist.
+// ReverseIter returns an iterator to traverse the elements of the linked list in reverse order.
+func (l *LinkedList[T]) ReverseIter() *Iterator[T] {
+	return &Iterator[T]{l: l, curr: l.tail, forward: false}
+}
+
+// Next retrieves the next element and advances the iterator. Returns false if no more elements exist.
 func (it *Iterator[T]) Next() (T, bool) {
 	if it.curr == nil {
 		var zero T
 		return zero, false
 	}
 	val := it.curr.value
-	it.curr = it.curr.next
+	if it.forward {
+		it.curr = it.curr.next
+	} else {
+		it.curr = it.curr.prev
+	}
 	return val, true
 }
 
+// Prev retrieves the previous element and moves the iterator back. Returns false if no more elements exist.
+func (it *Iterator[T]) Prev() (T, bool) {
+	var n *node[T]
+	if it.curr == nil {
+		if it.forward {
+			n = it.l.tail
+		} else {
+			n = it.l.head
+		}
+	} else {
+		if it.forward {
+			n = it.curr.prev
+		} else {
+			n = it.curr.next
+		}
+	}
+
+	if n == nil {
+		var zero T
+		return zero, false
+	}
+	it.curr = n
+	return n.value, true
+}
+
+// Reset resets the iterator to its initial position.
+func (it *Iterator[T]) Reset() {
+	if it.forward {
+		it.curr = it.l.head
+	} else {
+		it.curr = it.l.tail
+	}
+}
+
+// SyncLinkedList is a thread-safe wrapper for LinkedList.
 type SyncLinkedList[T any] struct {
 	mu sync.RWMutex
 	l  *LinkedList[T]
 }
 
+// NewSyncLinkedList creates a new, empty thread-safe list.
 func NewSyncLinkedList[T any]() *SyncLinkedList[T] {
 	return &SyncLinkedList[T]{l: NewLinkedList[T]()}
 }
 
+// AddFirst inserts an element at the front.
 func (sl *SyncLinkedList[T]) AddFirst(value T) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	sl.l.AddFirst(value)
 }
 
+// PushFront is an alias for AddFirst.
+func (sl *SyncLinkedList[T]) PushFront(value T) { sl.AddFirst(value) }
+
+// AddLast appends an element to the end.
 func (sl *SyncLinkedList[T]) AddLast(value T) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	sl.l.AddLast(value)
 }
 
+// PushBack is an alias for AddLast.
+func (sl *SyncLinkedList[T]) PushBack(value T) { sl.AddLast(value) }
+
+// Append is an alias for AddLast.
+func (sl *SyncLinkedList[T]) Append(value T) { sl.AddLast(value) }
+
+// RemoveFirst removes and returns the first element.
 func (sl *SyncLinkedList[T]) RemoveFirst() (T, bool) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	return sl.l.RemoveFirst()
 }
 
+// PopFront is an alias for RemoveFirst.
+func (sl *SyncLinkedList[T]) PopFront() (T, bool) { return sl.RemoveFirst() }
+
+// RemoveLast removes and returns the last element.
 func (sl *SyncLinkedList[T]) RemoveLast() (T, bool) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	return sl.l.RemoveLast()
 }
 
+// PopBack is an alias for RemoveLast.
+func (sl *SyncLinkedList[T]) PopBack() (T, bool) { return sl.RemoveLast() }
+
+// First returns the first element without removing it.
 func (sl *SyncLinkedList[T]) First() (T, bool) {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.First()
 }
 
+// Last returns the last element without removing it.
 func (sl *SyncLinkedList[T]) Last() (T, bool) {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.Last()
 }
 
+// Get returns the element at the given 0-based index.
 func (sl *SyncLinkedList[T]) Get(index int) (T, bool) {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.Get(index)
 }
 
+// Len returns the number of elements.
 func (sl *SyncLinkedList[T]) Len() int {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.Len()
 }
 
+// IsEmpty returns whether the list is empty.
 func (sl *SyncLinkedList[T]) IsEmpty() bool {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.IsEmpty()
 }
 
+// InsertAt inserts value at the given index.
 func (sl *SyncLinkedList[T]) InsertAt(index int, value T) bool {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	return sl.l.InsertAt(index, value)
 }
 
+// RemoveAt removes and returns the element at the given index.
 func (sl *SyncLinkedList[T]) RemoveAt(index int) (T, bool) {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	return sl.l.RemoveAt(index)
 }
 
+// Elements returns a slice with all elements in order.
 func (sl *SyncLinkedList[T]) Elements() []T {
 	sl.mu.RLock()
 	defer sl.mu.RUnlock()
 	return sl.l.Elements()
 }
 
+// Clear removes all elements.
 func (sl *SyncLinkedList[T]) Clear() {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()
 	sl.l.Clear()
+}
+
+// String returns a human-readable representation of the list.
+func (sl *SyncLinkedList[T]) String() string {
+	sl.mu.RLock()
+	defer sl.mu.RUnlock()
+	return sl.l.String()
 }

@@ -319,6 +319,285 @@ func TestSyncLinkedList_ConcurrentMixed(t *testing.T) {
 	}
 }
 
+func TestLinkedList_NewFromSlice(t *testing.T) {
+	t.Parallel()
+
+	slice := []int{1, 2, 3, 4, 5}
+	l := NewLinkedListFromSlice(slice)
+
+	if got, want := l.Len(), 5; got != want {
+		t.Fatalf("len=%d want %d", got, want)
+	}
+	if got, want := l.Elements(), slice; !slices.Equal(got, want) {
+		t.Fatalf("elements=%v want %v", got, want)
+	}
+}
+
+func TestLinkedList_Aliases(t *testing.T) {
+	t.Parallel()
+
+	l := NewLinkedList[int]()
+	l.PushBack(1)
+	l.PushFront(0)
+	l.Append(2)
+
+	if got, want := l.Elements(), []int{0, 1, 2}; !slices.Equal(got, want) {
+		t.Fatalf("after pushes: %v want %v", got, want)
+	}
+
+	v, ok := l.PopFront()
+	if !ok || v != 0 {
+		t.Fatalf("PopFront()=%d,%v want 0,true", v, ok)
+	}
+	v, ok = l.PopBack()
+	if !ok || v != 2 {
+		t.Fatalf("PopBack()=%d,%v want 2,true", v, ok)
+	}
+}
+
+func TestLinkedList_String(t *testing.T) {
+	t.Parallel()
+
+	l := NewLinkedList[int]()
+	if got, want := l.String(), "[]"; got != want {
+		t.Fatalf("empty String()=%q want %q", got, want)
+	}
+
+	l.AddLast(1)
+	l.AddLast(2)
+	l.AddLast(3)
+	if got, want := l.String(), "[1, 2, 3]"; got != want {
+		t.Fatalf("String()=%q want %q", got, want)
+	}
+}
+
+func TestLinkedList_Stream(t *testing.T) {
+	t.Parallel()
+
+	l := NewLinkedList[int]()
+	for i := 1; i <= 5; i++ {
+		l.AddLast(i)
+	}
+
+	s := l.Stream()
+	got := s.ToSlice()
+	want := []int{1, 2, 3, 4, 5}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Stream().ToSlice()=%v want %v", got, want)
+	}
+}
+
+func TestLinkedList_IteratorExtras(t *testing.T) {
+	t.Parallel()
+
+	l := NewLinkedList[int]()
+	for i := 1; i <= 3; i++ {
+		l.AddLast(i)
+	}
+
+	t.Run("ReverseIter", func(t *testing.T) {
+		it := l.ReverseIter()
+		var got []int
+		for {
+			v, ok := it.Next()
+			if !ok {
+				break
+			}
+			got = append(got, v)
+		}
+		want := []int{3, 2, 1}
+		if !slices.Equal(got, want) {
+			t.Fatalf("ReverseIter sequence=%v want %v", got, want)
+		}
+	})
+
+	t.Run("Prev forward", func(t *testing.T) {
+		it := l.Iter()
+		it.Next() // returns 1, moves to 2
+		it.Next() // returns 2, moves to 3
+		v, ok := it.Prev()
+		if !ok || v != 2 {
+			t.Fatalf("Prev() after 2 Next()=%d,%v want 2,true", v, ok)
+		}
+		// now curr is 2, Next should return 2 and move to 3
+		v, ok = it.Next()
+		if !ok || v != 2 {
+			t.Fatalf("Next() after Prev()=%d,%v want 2,true", v, ok)
+		}
+	})
+
+	t.Run("Reset", func(t *testing.T) {
+		it := l.Iter()
+		it.Next()
+		it.Next()
+		it.Reset()
+		v, ok := it.Next()
+		if !ok || v != 1 {
+			t.Fatalf("Next() after Reset()=%d,%v want 1,true", v, ok)
+		}
+	})
+
+	t.Run("Edge cases", func(t *testing.T) {
+		it := l.Iter()
+		if _, ok := it.Prev(); ok {
+			t.Fatal("Prev() at start of Iter should be false")
+		}
+		it.Next() // 1
+		it.Next() // 2
+		it.Next() // 3
+		it.Next() // nil
+		v, ok := it.Prev()
+		if !ok || v != 3 {
+			t.Fatalf("Prev() at end of Iter should be 3, got %d, %v", v, ok)
+		}
+
+		it = l.ReverseIter()
+		if _, ok := it.Prev(); ok {
+			t.Fatal("Prev() at start of ReverseIter should be false")
+		}
+		it.Next() // 3
+		it.Next() // 2
+		it.Next() // 1
+		it.Next() // nil
+		v, ok = it.Prev()
+		if !ok || v != 1 {
+			t.Fatalf("Prev() at end of ReverseIter should be 1, got %d, %v", v, ok)
+		}
+	})
+}
+
+func TestSyncLinkedList_Aliases(t *testing.T) {
+	t.Parallel()
+
+	sl := NewSyncLinkedList[int]()
+	sl.PushBack(1)
+	sl.PushFront(0)
+	sl.Append(2)
+
+	if got, want := sl.Elements(), []int{0, 1, 2}; !slices.Equal(got, want) {
+		t.Fatalf("after pushes: %v want %v", got, want)
+	}
+
+	v, ok := sl.PopFront()
+	if !ok || v != 0 {
+		t.Fatalf("PopFront()=%d,%v want 0,true", v, ok)
+	}
+	v, ok = sl.PopBack()
+	if !ok || v != 2 {
+		t.Fatalf("PopBack()=%d,%v want 2,true", v, ok)
+	}
+	if got, want := sl.Elements(), []int{1}; !slices.Equal(got, want) {
+		t.Fatalf("after pops: %v want %v", got, want)
+	}
+}
+
+func TestSyncLinkedList_RemoveLast(t *testing.T) {
+	t.Parallel()
+
+	sl := NewSyncLinkedList[int]()
+	if _, ok := sl.RemoveLast(); ok {
+		t.Fatal("RemoveLast on empty should return ok=false")
+	}
+
+	sl.AddLast(10)
+	sl.AddLast(20)
+	sl.AddLast(30)
+
+	v, ok := sl.RemoveLast()
+	if !ok || v != 30 {
+		t.Fatalf("RemoveLast()=%d,%v want 30,true", v, ok)
+	}
+	if got, want := sl.Elements(), []int{10, 20}; !slices.Equal(got, want) {
+		t.Fatalf("after RemoveLast: %v want %v", got, want)
+	}
+}
+
+func TestSyncLinkedList_InsertAt(t *testing.T) {
+	t.Parallel()
+
+	sl := NewSyncLinkedList[int]()
+	sl.AddLast(1)
+	sl.AddLast(3)
+
+	if !sl.InsertAt(1, 2) {
+		t.Fatal("InsertAt(1,2) should return true")
+	}
+	if got, want := sl.Elements(), []int{1, 2, 3}; !slices.Equal(got, want) {
+		t.Fatalf("after middle insert: %v want %v", got, want)
+	}
+
+	if !sl.InsertAt(0, 0) {
+		t.Fatal("InsertAt(0,0) should return true")
+	}
+	if !sl.InsertAt(sl.Len(), 4) {
+		t.Fatal("InsertAt(end,4) should return true")
+	}
+	if got, want := sl.Elements(), []int{0, 1, 2, 3, 4}; !slices.Equal(got, want) {
+		t.Fatalf("after edge inserts: %v want %v", got, want)
+	}
+
+	if sl.InsertAt(-1, 99) {
+		t.Fatal("InsertAt(-1) should return false")
+	}
+	if sl.InsertAt(sl.Len()+1, 99) {
+		t.Fatal("InsertAt past end should return false")
+	}
+}
+
+func TestSyncLinkedList_RemoveAt(t *testing.T) {
+	t.Parallel()
+
+	sl := NewSyncLinkedList[int]()
+	for _, v := range []int{10, 20, 30, 40, 50} {
+		sl.AddLast(v)
+	}
+
+	v, ok := sl.RemoveAt(2)
+	if !ok || v != 30 {
+		t.Fatalf("RemoveAt(2)=%d,%v want 30,true", v, ok)
+	}
+	if got, want := sl.Elements(), []int{10, 20, 40, 50}; !slices.Equal(got, want) {
+		t.Fatalf("after middle remove: %v want %v", got, want)
+	}
+
+	if _, ok := sl.RemoveAt(-1); ok {
+		t.Fatal("RemoveAt(-1) should return false")
+	}
+	if _, ok := sl.RemoveAt(sl.Len()); ok {
+		t.Fatal("RemoveAt(len) should return false")
+	}
+}
+
+func TestSyncLinkedList_Clear(t *testing.T) {
+	t.Parallel()
+
+	sl := NewSyncLinkedList[int]()
+	sl.AddLast(1)
+	sl.AddLast(2)
+	sl.AddLast(3)
+
+	sl.Clear()
+	if !sl.IsEmpty() || sl.Len() != 0 {
+		t.Fatalf("Clear() failed, len=%d", sl.Len())
+	}
+	if _, ok := sl.First(); ok {
+		t.Fatal("First() should be false after Clear")
+	}
+	if _, ok := sl.Last(); ok {
+		t.Fatal("Last() should be false after Clear")
+	}
+}
+
+func TestSyncLinkedList_String(t *testing.T) {
+	t.Parallel()
+	sl := NewSyncLinkedList[int]()
+	sl.AddLast(1)
+	sl.AddLast(2)
+	if got, want := sl.String(), "[1, 2]"; got != want {
+		t.Fatalf("Sync String()=%q want %q", got, want)
+	}
+}
+
 // ---------- Benchmarks ----------
 
 func BenchmarkLinkedList_AddLast(b *testing.B) {
