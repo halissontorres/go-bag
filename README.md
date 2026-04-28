@@ -24,6 +24,7 @@ Every collection ships in two flavors: a fast, single-threaded core type and a `
 
 - **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
 - **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, and `SyncSet` types for safe access from multiple goroutines.
+- **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, and `Reduce`. Streams are single-pass and not goroutine-safe.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
 - **Ordered trees.** B-Tree-backed `BTreeSet` and `BTreeMap` with sorted iteration, in-order range queries, min/max lookup, and a forward iterator.
 - **Directed acyclic graph.** `DAG[T]` with cycle-safe edge insertion, topological sort (Kahn's algorithm), reachability queries, and ancestor/descendant lookup.
@@ -60,15 +61,100 @@ import (
 ### Linked List
 
 ```go
+import "github.com/halissontorres/go-bag/bag/lists"
+
+// Create from scratch or from a slice.
 l := lists.NewLinkedList[int]()
 l.AddLast(1)
 l.AddLast(2)
 l.AddFirst(0)
 
 fmt.Println(l.Elements()) // [0 1 2]
-v, _ := l.RemoveFirst()
-fmt.Println(v)            // 0
+fmt.Println(l.String())   // [0, 1, 2]
+
+// Random-access (O(min(i, n-i)) bidirectional walk).
+v, _ := l.Get(1)     // 1
+l.InsertAt(1, 99)    // [0, 99, 1, 2]
+l.RemoveAt(1)        // [0, 1, 2]
+
+// Pop from either end.
+first, _ := l.RemoveFirst() // 0
+last,  _ := l.RemoveLast()  // 2
+
+// Alias methods (Stack / Queue style).
+l.PushFront(10); l.PushBack(20); l.Append(30)
+l.PopFront(); l.PopBack()
+
+// Forward and reverse iteration.
+it := l.Iter()
+for v, ok := it.Next(); ok; v, ok = it.Next() {
+    fmt.Println(v)
+}
+
+rit := l.ReverseIter()
+for v, ok := rit.Next(); ok; v, ok = rit.Next() {
+    fmt.Println(v)
+}
+
+// Thread-safe variant — same API, protected by a sync.RWMutex.
+sl := lists.NewSyncLinkedList[int]()
+sl.AddLast(42)
+fmt.Println(sl.String()) // [42]
 ```
+
+### Stream
+
+```go
+import "github.com/halissontorres/go-bag/bag/streams"
+
+// Build a pipeline: double every number, keep only those > 10, take the first 3.
+result := streams.Limit(
+    streams.Filter(
+        streams.Map(
+            streams.FromSlice([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}),
+            func(x int) int { return x * 2 },
+        ),
+        func(x int) bool { return x > 10 },
+    ),
+    3,
+).ToSlice()
+
+fmt.Println(result) // [12 14 16]
+```
+
+Other sources and operations:
+
+```go
+// From a channel
+ch := make(chan string, 3)
+ch <- "a"; ch <- "b"; ch <- "c"
+close(ch)
+words := streams.FromChannel(ch).ToSlice() // ["a" "b" "c"]
+
+// Deduplicate and sort
+unique := streams.Sorted(
+    streams.Distinct(streams.FromSlice([]int{3, 1, 2, 1, 3})),
+).ToSlice() // [1 2 3]
+
+// Aggregate
+sum := streams.FromSlice([]int{1, 2, 3, 4}).
+    Reduce(0, func(a, b int) int { return a + b }) // 10
+
+// Short-circuit checks
+hasEven := streams.FromSlice([]int{1, 2, 3}).
+    Any(func(x int) bool { return x%2 == 0 }) // true
+
+allPositive := streams.FromSlice([]int{1, 2, 3}).
+    All(func(x int) bool { return x > 0 }) // true
+
+// FlatMap
+pairs := streams.FlatMap(
+    streams.FromSlice([]int{1, 2}),
+    func(x int) []int { return []int{x, x * 10} },
+).ToSlice() // [1 10 2 20]
+```
+
+> **Note:** Streams are single-pass. Once consumed, re-calling any terminal operation returns an empty result.
 
 ## Contributing
 
