@@ -24,7 +24,8 @@ Every collection ships in two flavors: a fast, single-threaded core type and a `
 
 - **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
 - **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, and `SyncSet` types for safe access from multiple goroutines.
-- **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, and `Reduce`. Streams are single-pass and not goroutine-safe.
+- **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
+- **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
 - **Ordered trees.** B-Tree-backed `BTreeSet` and `BTreeMap` with sorted iteration, in-order range queries, min/max lookup, and a forward iterator.
 - **Directed acyclic graph.** `DAG[T]` with cycle-safe edge insertion, topological sort (Kahn's algorithm), reachability queries, and ancestor/descendant lookup.
@@ -152,9 +153,53 @@ pairs := streams.FlatMap(
     streams.FromSlice([]int{1, 2}),
     func(x int) []int { return []int{x, x * 10} },
 ).ToSlice() // [1 10 2 20]
+
+// FindFirst returns an Optional — present if a match is found, empty otherwise.
+opt := streams.FindFirst(
+    streams.FromSlice([]int{1, 3, 4, 6}),
+    func(x int) bool { return x%2 == 0 },
+)
+if v, ok := opt.Get(); ok {
+    fmt.Println(v) // 4
+}
 ```
 
 > **Note:** Streams are single-pass. Once consumed, re-calling any terminal operation returns an empty result.
+
+### Optional
+
+```go
+import "github.com/halissontorres/go-bag/bag/opts"
+
+// Create
+present := opts.Of(42)
+empty   := opts.Empty[int]()
+
+n := 99
+fromPtr := opts.OfPtr(&n)      // present
+fromNil := opts.OfPtr[int](nil) // empty
+
+// Unwrap
+v, ok := present.Get()          // 42, true
+present.IfPresent(func(v int) { fmt.Println(v) }) // 42
+
+// Fallback
+empty.OrElse(0)                  // 0
+empty.OrElseGet(func() int { return computeDefault() })
+
+// Transform
+doubled := opts.Map(present, func(x int) int { return x * 2 }) // Optional[84]
+nested  := opts.FlatMap(present, func(x int) opts.Optional[string] {
+    return opts.Of(fmt.Sprintf("val=%d", x))
+}) // Optional["val=42"]
+
+// Filter
+even := present.Filter(func(x int) bool { return x%2 == 0 }) // Optional[42]
+odd  := opts.Of(3).Filter(func(x int) bool { return x%2 == 0 }) // empty
+
+fmt.Println(present) // Optional[42]
+fmt.Println(empty)   // Optional[empty]
+```
 
 ## Contributing
 

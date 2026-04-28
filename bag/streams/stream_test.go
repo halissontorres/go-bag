@@ -257,6 +257,31 @@ func TestCount(t *testing.T) {
 	}
 }
 
+func TestFindFirst(t *testing.T) {
+	s := FromSlice([]int{1, 3, 4, 6, 7})
+	result := FindFirst(s, func(x int) bool { return x%2 == 0 })
+	v, ok := result.Get()
+	if !ok || v != 4 {
+		t.Fatalf("FindFirst(even)=%d,%v want 4,true", v, ok)
+	}
+}
+
+func TestFindFirstNotFound(t *testing.T) {
+	s := FromSlice([]int{1, 3, 5})
+	result := FindFirst(s, func(x int) bool { return x%2 == 0 })
+	if result.IsPresent() {
+		t.Fatal("FindFirst should return empty when no element matches")
+	}
+}
+
+func TestFindFirstEmpty(t *testing.T) {
+	s := FromSlice([]int{})
+	result := FindFirst(s, func(x int) bool { return true })
+	if result.IsPresent() {
+		t.Fatal("FindFirst on empty stream should return empty")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkFromSlice(b *testing.B) {
