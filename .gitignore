@@ -1,0 +1,24 @@
+# Binários compilados
+/go-bag
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Output de testes
+*.test
+*.out
+
+# Diretório vendor
+vendor/
+
+# Arquivos de IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Outros
+/graphify-out
