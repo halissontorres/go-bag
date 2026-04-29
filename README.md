@@ -49,7 +49,7 @@ To use the enum generator as a CLI:
 go install github.com/halissontorres/go-bag/cmd@latest
 ```
 
-## Quick Start
+## Quick start
 
 Each collection lives in its own subpackage under `pkg/`, named after the data structure. Import the ones you need:
 
@@ -59,7 +59,7 @@ import (
 )
 ```
 
-### Linked List
+### Linked list
 
 ```go
 import "github.com/halissontorres/go-bag/pkg/list"
@@ -558,7 +558,7 @@ fmt.Println(g.String()) // textual adjacency list
 
 > **Note:** `AddEdge` performs a cycle check before insertion, so the graph is always acyclic. Attempting to add an edge that would close a cycle returns `false`.
 
-### Enum Generator
+### Enum generator
 
 The enum generator reads a `.go` file that declares string or int constants and emits a companion `*_enum.gen.go` file with the following helpers: `IsValid`, `Values`, `String`, `Parse<Type>`, `MarshalJSON`/`UnmarshalJSON`, `Value`/`Scan` (for `database/sql`), `Index`, and `Exhaustive`.
 
@@ -610,6 +610,37 @@ db.Exec("INSERT INTO orders (status) ...", StatusApproved.Value)
 ```
 
 The generated file is safe to commit and will not be overwritten unless you rerun the generator.
+
+## Testing and benchmarks
+
+The repository ships with full unit-test coverage and Go-1.24-style benchmarks (`testing.B.Loop`, `b.ReportAllocs`).
+
+```bash
+# Run the full suite with the race detector.
+go test -race ./...
+
+# Run benchmarks with allocation reporting.
+go test -bench=. -benchmem ./...
+```
+
+## Project layout
+
+```
+go-bag/
+├── pkg/
+│   ├── enum/    # Enum code generator (Generate, EnumInfo)
+│   ├── graph/   # DAG — directed acyclic graph
+│   ├── heap/    # Heap, SyncHeap (min-heap)
+│   ├── list/    # LinkedList, SyncLinkedList
+│   ├── opt/     # Optional[T]
+│   ├── queue/   # Queue, SyncQueue, Deque, SyncDeque
+│   ├── set/     # Set, SyncSet, EnumSet
+│   ├── stack/   # Stack, SyncStack
+│   ├── stream/  # Stream[T] — lazy pipeline API
+│   └── tree/    # BTreeSet, BTreeMap, BTreeIterator
+├── cmd/         # enum generator CLI entry point
+└── assets/      # project images
+```
 
 ## Contributing
 
