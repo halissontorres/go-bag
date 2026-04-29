@@ -22,7 +22,7 @@ Every collection ships in two flavors: a fast, single-threaded core type and a `
 
 ## Features
 
-- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
+- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
 - **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, and `SyncSet` types for safe access from multiple goroutines.
 - **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
 - **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
@@ -200,6 +200,43 @@ odd  := opt.Of(3).Filter(func(x int) bool { return x%2 == 0 }) // empty
 fmt.Println(present) // Optional[42]
 fmt.Println(empty)   // Optional[empty]
 ```
+
+### Heap
+
+```go
+import "github.com/halissontorres/go-bag/pkg/heap"
+
+// Works with any cmp.Ordered type: int, float64, string, …
+h := heap.New[int]()
+
+h.Push(50)
+h.Push(10)
+h.Push(30)
+h.Push(5)
+h.Push(100)
+
+// Peek returns the minimum without removing it.
+min, _ := h.Peek() // 5
+
+// Pop removes and returns elements in ascending order (Min-Heap).
+v, _ := h.Pop() // 5
+v, _ = h.Pop()  // 10
+
+fmt.Println(h.Len()) // 3
+
+// Works with strings too — ordering is lexicographic.
+words := heap.New[string]()
+words.Push("Zebra")
+words.Push("Abacaxi")
+words.Push("Banana")
+first, _ := words.Pop() // "Abacaxi"
+
+// Pop and Peek return an error when the heap is empty.
+empty := heap.New[float64]()
+_, err := empty.Pop() // err: "empty heap"
+```
+
+> **Note:** `Heap` is a Min-Heap — `Pop` always returns the smallest element. It is not goroutine-safe.
 
 ## Contributing
 
