@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"container/heap"
 	"errors"
+	"sync"
 )
 
 // internalHeap is the structure that implements heap.Interface using Generics.
@@ -66,4 +67,50 @@ func (h *Heap[T]) Peek() (T, error) {
 
 func (h *Heap[T]) Len() int {
 	return h.data.Len()
+}
+
+// IsEmpty reports whether the heap is empty.
+func (h *Heap[T]) IsEmpty() bool {
+	return h.data.Len() == 0
+}
+
+// SyncHeap is a thread-safe Min-Heap.
+type SyncHeap[T cmp.Ordered] struct {
+	mu sync.RWMutex
+	h  *Heap[T]
+}
+
+// NewSync creates a new thread-safe Min-Heap.
+func NewSync[T cmp.Ordered]() *SyncHeap[T] {
+	return &SyncHeap[T]{h: New[T]()}
+}
+
+func (sh *SyncHeap[T]) Push(v T) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	sh.h.Push(v)
+}
+
+func (sh *SyncHeap[T]) Pop() (T, error) {
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	return sh.h.Pop()
+}
+
+func (sh *SyncHeap[T]) Peek() (T, error) {
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+	return sh.h.Peek()
+}
+
+func (sh *SyncHeap[T]) Len() int {
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+	return sh.h.Len()
+}
+
+func (sh *SyncHeap[T]) IsEmpty() bool {
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+	return sh.h.IsEmpty()
 }

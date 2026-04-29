@@ -2,6 +2,7 @@ package heap
 
 import (
 	"math/rand"
+	"sync"
 	"testing"
 )
 
@@ -86,6 +87,142 @@ func TestHeap_EmptyErrors(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when Pop on empty heap, but none occurred")
 	}
+}
+
+func TestSyncHeap_MinHeapBehavior(t *testing.T) {
+	h := NewSync[int]()
+
+	if !h.IsEmpty() {
+		t.Fatal("expected empty heap")
+	}
+
+	h.Push(50)
+	h.Push(10)
+	h.Push(5)
+	h.Push(30)
+
+	if h.Len() != 4 {
+		t.Errorf("expected Len 4, got %d", h.Len())
+	}
+
+	min, err := h.Peek()
+	if err != nil {
+		t.Fatalf("unexpected error in Peek: %v", err)
+	}
+	if min != 5 {
+		t.Errorf("expected Peek 5, got %d", min)
+	}
+	if h.Len() != 4 {
+		t.Errorf("Peek must not remove elements; expected Len 4, got %d", h.Len())
+	}
+
+	expected := []int{5, 10, 30, 50}
+	for i, want := range expected {
+		got, err := h.Pop()
+		if err != nil {
+			t.Fatalf("unexpected error in Pop at %d: %v", i, err)
+		}
+		if got != want {
+			t.Errorf("Pop[%d]: expected %d, got %d", i, want, got)
+		}
+	}
+
+	if !h.IsEmpty() {
+		t.Error("expected empty heap after draining")
+	}
+}
+
+func TestSyncHeap_EmptyErrors(t *testing.T) {
+	h := NewSync[float64]()
+
+	_, err := h.Peek()
+	if err == nil {
+		t.Error("expected error on Peek of empty SyncHeap")
+	}
+
+	_, err = h.Pop()
+	if err == nil {
+		t.Error("expected error on Pop of empty SyncHeap")
+	}
+}
+
+func TestSyncHeap_ConcurrentPushPop(t *testing.T) {
+	const goroutines = 10
+	const itemsEach = 100
+
+	h := NewSync[int]()
+	var wg sync.WaitGroup
+
+	// Concurrent pushes
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func(base int) {
+			defer wg.Done()
+			for i := 0; i < itemsEach; i++ {
+				h.Push(base*itemsEach + i)
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	if h.Len() != goroutines*itemsEach {
+		t.Errorf("expected %d elements, got %d", goroutines*itemsEach, h.Len())
+	}
+
+	// Concurrent pops
+	results := make(chan int, goroutines*itemsEach)
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < itemsEach; i++ {
+				v, err := h.Pop()
+				if err != nil {
+					t.Errorf("unexpected error in concurrent Pop: %v", err)
+					return
+				}
+				results <- v
+			}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	if h.Len() != 0 {
+		t.Errorf("expected empty heap after concurrent pops, got Len %d", h.Len())
+	}
+
+	total := 0
+	for range results {
+		total++
+	}
+	if total != goroutines*itemsEach {
+		t.Errorf("expected %d popped values, got %d", goroutines*itemsEach, total)
+	}
+}
+
+func TestSyncHeap_ConcurrentPeek(t *testing.T) {
+	h := NewSync[int]()
+	for i := 100; i >= 1; i-- {
+		h.Push(i)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(20)
+	for i := 0; i < 20; i++ {
+		go func() {
+			defer wg.Done()
+			v, err := h.Peek()
+			if err != nil {
+				t.Errorf("unexpected error in concurrent Peek: %v", err)
+				return
+			}
+			if v != 1 {
+				t.Errorf("expected Peek 1, got %d", v)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // BenchmarkPush_Sequential tests the worst case/best case depending on Min/Max heap,

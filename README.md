@@ -23,7 +23,7 @@ Every collection ships in two flavors: a fast, single-threaded core type and a `
 ## Features
 
 - **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
-- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, and `SyncSet` types for safe access from multiple goroutines.
+- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, and `SyncSet` types for safe access from multiple goroutines.
 - **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
 - **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
@@ -234,9 +234,16 @@ first, _ := words.Pop() // "Abacaxi"
 // Pop and Peek return an error when the heap is empty.
 empty := heap.New[float64]()
 _, err := empty.Pop() // err: "empty heap"
+
+// Thread-safe variant — same API, protected by a sync.RWMutex.
+sh := heap.NewSync[int]()
+sh.Push(3)
+sh.Push(1)
+sh.Push(2)
+min, _ = sh.Pop() // 1
 ```
 
-> **Note:** `Heap` is a Min-Heap — `Pop` always returns the smallest element. It is not goroutine-safe.
+> **Note:** `Heap` is a Min-Heap — `Pop` always returns the smallest element. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
 
 ## Contributing
 
