@@ -24,6 +24,26 @@ func TestQueue_NewIsEmpty(t *testing.T) {
 	}
 }
 
+func TestQueue_NewQueue(t *testing.T) {
+	t.Parallel()
+	capacity := 256
+	q := NewQueue[int](WithInitialCap(capacity))
+	cap := cap(q.items)
+	if cap != capacity {
+		t.Fatalf("expected initial capacity %d, got %d", capacity, cap)
+	}
+}
+
+func TestQueue_NewSyncQueue(t *testing.T) {
+	t.Parallel()
+	cap := 256
+	q := NewSyncQueue[int](WithInitialCap(cap))
+	len := q.Len()
+	if q.Len() != len {
+		t.Fatalf("expected initial capacity %d, got %d", cap, len)
+	}
+}
+
 func TestQueue_FIFOOrder(t *testing.T) {
 	t.Parallel()
 

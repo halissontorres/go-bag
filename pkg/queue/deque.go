@@ -12,24 +12,23 @@ type Deque[T any] struct {
 	buf      []T
 	head     int // index of the first element
 	tail     int // index just past the last element
-	size     int
-	capacity int
+	size     int // number of elements
+	capacity int // capacity of the underlying buffer
 }
 
 // NewDeque creates a new, empty Deque with an initial capacity of 16.
-func NewDeque[T any]() *Deque[T] {
-	return NewDequeWithCap[T](16)
+func NewDeque[T any](opts ...Option) *Deque[T] {
+	c := applyDequeOptions(opts)
+	return &Deque[T]{
+		buf:      make([]T, c.initialCap),
+		capacity: c.initialCap,
+	}
 }
 
 // NewDequeWithCap creates an empty Deque with the given initial capacity.
+// Deprecated: prefira NewDeque(WithInitialCap(cap)).
 func NewDequeWithCap[T any](cap int) *Deque[T] {
-	if cap < 1 {
-		cap = 1
-	}
-	return &Deque[T]{
-		buf:      make([]T, cap),
-		capacity: cap,
-	}
+	return NewDeque[T](WithInitialCap(cap))
 }
 
 // resize reallocates the underlying buffer when capacity is exceeded.
@@ -65,6 +64,8 @@ func (d *Deque[T]) shrink() {
 
 // Len returns the number of elements.
 func (d *Deque[T]) Len() int { return d.size }
+
+func (d *Deque[T]) Capacity() int { return d.capacity }
 
 // IsEmpty reports whether the deque is empty.
 func (d *Deque[T]) IsEmpty() bool { return d.size == 0 }
@@ -171,8 +172,8 @@ type SyncDeque[T any] struct {
 	d  *Deque[T]
 }
 
-func NewSyncDeque[T any]() *SyncDeque[T] {
-	return &SyncDeque[T]{d: NewDeque[T]()}
+func NewSyncDeque[T any](opts ...Option) *SyncDeque[T] {
+	return &SyncDeque[T]{d: NewDeque[T](opts...)}
 }
 
 func (sd *SyncDeque[T]) PushFront(val T) { sd.mu.Lock(); defer sd.mu.Unlock(); sd.d.PushFront(val) }
@@ -198,4 +199,5 @@ func (sd *SyncDeque[T]) PeekBack() (T, bool) {
 	return sd.d.PeekBack()
 }
 func (sd *SyncDeque[T]) Len() int      { sd.mu.RLock(); defer sd.mu.RUnlock(); return sd.d.Len() }
+func (sd *SyncDeque[T]) Capacity() int { sd.mu.RLock(); defer sd.mu.RUnlock(); return sd.d.Capacity() }
 func (sd *SyncDeque[T]) IsEmpty() bool { sd.mu.RLock(); defer sd.mu.RUnlock(); return sd.d.IsEmpty() }
