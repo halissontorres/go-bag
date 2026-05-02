@@ -7,21 +7,18 @@ import (
 )
 
 func TestHeap_Int_MinHeapBehavior(t *testing.T) {
-	h := New[int]()
+	h := New[int]() // padrão: Min-Heap
 
-	// 1. Test initial size
 	if h.Len() != 0 {
 		t.Errorf("expected Len 0, got %d", h.Len())
 	}
 
-	// 2. Insert elements out of order
 	h.Push(50)
 	h.Push(10)
 	h.Push(30)
 	h.Push(5)
 	h.Push(100)
 
-	// 3. Test if Peek returns the smallest without removing it
 	minVal, err := h.Peek()
 	if err != nil {
 		t.Fatalf("unexpected error in Peek: %v", err)
@@ -30,9 +27,7 @@ func TestHeap_Int_MinHeapBehavior(t *testing.T) {
 		t.Errorf("expected Peek 5, got %d", minVal)
 	}
 
-	// 4. Test removal (Pop) verifying if ascending order is respected
 	expectedOrder := []int{5, 10, 30, 50, 100}
-
 	for i, expected := range expectedOrder {
 		val, err := h.Pop()
 		if err != nil {
@@ -43,7 +38,6 @@ func TestHeap_Int_MinHeapBehavior(t *testing.T) {
 		}
 	}
 
-	// 5. Verify if it is empty at the end
 	if h.Len() != 0 {
 		t.Errorf("expected Len 0 after removing everything, got %d", h.Len())
 	}
@@ -86,49 +80,6 @@ func TestHeap_EmptyErrors(t *testing.T) {
 	_, err = h.Pop()
 	if err == nil {
 		t.Error("expected error when Pop on empty heap, but none occurred")
-	}
-}
-
-func TestSyncHeap_MinHeapBehavior(t *testing.T) {
-	h := NewSync[int]()
-
-	if !h.IsEmpty() {
-		t.Fatal("expected empty heap")
-	}
-
-	h.Push(50)
-	h.Push(10)
-	h.Push(5)
-	h.Push(30)
-
-	if h.Len() != 4 {
-		t.Errorf("expected Len 4, got %d", h.Len())
-	}
-
-	min, err := h.Peek()
-	if err != nil {
-		t.Fatalf("unexpected error in Peek: %v", err)
-	}
-	if min != 5 {
-		t.Errorf("expected Peek 5, got %d", min)
-	}
-	if h.Len() != 4 {
-		t.Errorf("Peek must not remove elements; expected Len 4, got %d", h.Len())
-	}
-
-	expected := []int{5, 10, 30, 50}
-	for i, want := range expected {
-		got, err := h.Pop()
-		if err != nil {
-			t.Fatalf("unexpected error in Pop at %d: %v", i, err)
-		}
-		if got != want {
-			t.Errorf("Pop[%d]: expected %d, got %d", i, want, got)
-		}
-	}
-
-	if !h.IsEmpty() {
-		t.Error("expected empty heap after draining")
 	}
 }
 
@@ -268,4 +219,177 @@ func BenchmarkHeap_Pop(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = h.Pop()
 	}
+}
+
+func TestHeap_Int_MaxHeapBehavior(t *testing.T) {
+	h := New[int](WithMaxHeap[int]())
+
+	h.Push(50)
+	h.Push(10)
+	h.Push(30)
+	h.Push(5)
+	h.Push(100)
+
+	maxVal, err := h.Peek()
+	if err != nil {
+		t.Fatalf("unexpected error in Peek: %v", err)
+	}
+	if maxVal != 100 {
+		t.Errorf("expected Peek 100, got %d", maxVal)
+	}
+
+	expectedOrder := []int{100, 50, 30, 10, 5}
+	for i, expected := range expectedOrder {
+		val, err := h.Pop()
+		if err != nil {
+			t.Fatalf("unexpected error in Pop at iteration %d: %v", i, err)
+		}
+		if val != expected {
+			t.Errorf("expected Pop %d, got %d", expected, val)
+		}
+	}
+}
+
+func TestHeap_WithLessFunc(t *testing.T) {
+	// ordena pelo último dígito
+	h := New[int](WithLessFunc(func(a, b int) bool {
+		return a%10 < b%10
+	}))
+
+	h.Push(21) // último dígito: 1
+	h.Push(35) // último dígito: 5
+	h.Push(43) // último dígito: 3
+	h.Push(59) // último dígito: 9
+
+	first, err := h.Peek()
+	if err != nil {
+		t.Fatalf("unexpected error in Peek: %v", err)
+	}
+	if first%10 != 1 {
+		t.Errorf("expected element with last digit 1, got %d", first)
+	}
+
+	prev, _ := h.Pop()
+	for h.Len() > 0 {
+		curr, _ := h.Pop()
+		if prev%10 > curr%10 {
+			t.Errorf("order violation: %d came before %d", prev, curr)
+		}
+		prev = curr
+	}
+}
+
+func TestHeap_WithMinHeap_Explicit(t *testing.T) {
+	// WithMinHeap explícito deve se comportar igual ao padrão
+	h := New[int](WithMinHeap[int]())
+
+	h.Push(20)
+	h.Push(3)
+	h.Push(15)
+
+	val, err := h.Pop()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != 3 {
+		t.Errorf("expected 3, got %d", val)
+	}
+}
+
+// --- Testes existentes sem alteração ---
+
+func TestSyncHeap_MinHeapBehavior(t *testing.T) {
+	h := NewSync[int]()
+
+	if !h.IsEmpty() {
+		t.Fatal("expected empty heap")
+	}
+
+	h.Push(50)
+	h.Push(10)
+	h.Push(5)
+	h.Push(30)
+
+	if h.Len() != 4 {
+		t.Errorf("expected Len 4, got %d", h.Len())
+	}
+
+	minm, err := h.Peek()
+	if err != nil {
+		t.Fatalf("unexpected error in Peek: %v", err)
+	}
+	if minm != 5 {
+		t.Errorf("expected Peek 5, got %d", minm)
+	}
+	if h.Len() != 4 {
+		t.Errorf("Peek must not remove elements; expected Len 4, got %d", h.Len())
+	}
+
+	expected := []int{5, 10, 30, 50}
+	for i, want := range expected {
+		got, err := h.Pop()
+		if err != nil {
+			t.Fatalf("unexpected error in Pop at %d: %v", i, err)
+		}
+		if got != want {
+			t.Errorf("Pop[%d]: expected %d, got %d", i, want, got)
+		}
+	}
+
+	if !h.IsEmpty() {
+		t.Error("expected empty heap after draining")
+	}
+}
+
+func TestSyncHeap_MaxHeapBehavior(t *testing.T) {
+	h := NewSync[int](WithMaxHeap[int]())
+
+	h.Push(50)
+	h.Push(10)
+	h.Push(5)
+	h.Push(30)
+
+	maxx, err := h.Peek()
+	if err != nil {
+		t.Fatalf("unexpected error in Peek: %v", err)
+	}
+	if maxx != 50 {
+		t.Errorf("expected Peek 50, got %d", maxx)
+	}
+
+	expected := []int{50, 30, 10, 5}
+	for i, want := range expected {
+		got, err := h.Pop()
+		if err != nil {
+			t.Fatalf("unexpected error in Pop at %d: %v", i, err)
+		}
+		if got != want {
+			t.Errorf("Pop[%d]: expected %d, got %d", i, want, got)
+		}
+	}
+}
+
+// Benchmark comparativo Min vs Max para evidenciar que o custo é idêntico
+func BenchmarkHeap_MinVsMax(b *testing.B) {
+	b.Run("MinHeap", func(b *testing.B) {
+		h := New[int](WithMinHeap[int]())
+		for i := 0; i < b.N; i++ {
+			h.Push(rand.Intn(1000000))
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = h.Pop()
+		}
+	})
+
+	b.Run("MaxHeap", func(b *testing.B) {
+		h := New[int](WithMaxHeap[int]())
+		for i := 0; i < b.N; i++ {
+			h.Push(rand.Intn(1000000))
+		}
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = h.Pop()
+		}
+	})
 }

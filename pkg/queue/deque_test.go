@@ -108,6 +108,26 @@ func TestDeque_NewDequeWithCapClampsLow(t *testing.T) {
 	}
 }
 
+func TestDeque_NewDeque(t *testing.T) {
+	t.Parallel()
+
+	d := NewDeque[int](WithInitialCap(256))
+	if d.capacity != 256 {
+		t.Fatalf("expected size 256, got %d", d.size)
+	}
+}
+
+func TestDeque_NewSyncDeque(t *testing.T) {
+	t.Parallel()
+
+	cap := 256
+	d := NewSyncDeque[int](WithInitialCap(cap))
+
+	if d.Capacity() != cap {
+		t.Fatalf("expected size %d, got %d", cap, d.Len())
+	}
+}
+
 func TestDeque_Clear(t *testing.T) {
 	t.Parallel()
 

@@ -5,16 +5,20 @@ import "sync"
 // Queue is a generic FIFO queue.
 // The zero value is not usable; use NewQueue.
 type Queue[T any] struct {
-	items []T
-	head  int
-	tail  int
-	size  int
+	items []T // underlying slice
+	head  int // index of the first element
+	tail  int // index of the last element
+	size  int // number of elements
 }
 
 // NewQueue creates a new, empty queue.
-func NewQueue[T any]() *Queue[T] {
+func NewQueue[T any](opts ...Option) *Queue[T] {
+	c := &options{initialCap: defaultInitialCap}
+	for _, opt := range opts {
+		opt(c)
+	}
 	return &Queue[T]{
-		items: make([]T, 0),
+		items: make([]T, 0, c.initialCap),
 	}
 }
 
@@ -101,8 +105,8 @@ type SyncQueue[T any] struct {
 	q  *Queue[T]
 }
 
-func NewSyncQueue[T any]() *SyncQueue[T] {
-	return &SyncQueue[T]{q: NewQueue[T]()}
+func NewSyncQueue[T any](opts ...Option) *SyncQueue[T] {
+	return &SyncQueue[T]{q: NewQueue[T](opts...)}
 }
 
 func (sq *SyncQueue[T]) Enqueue(val T) {

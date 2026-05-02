@@ -11,23 +11,105 @@ import (
 	"text/template"
 )
 
+// generateConfig holds construction-time options for the generator.
+type generateConfig struct {
+	outputSuffix   string
+	withJSON       bool
+	withSQL        bool
+	withExhaustive bool
+}
+
+// GenerateOption configures the code generator at call time.
+type GenerateOption func(*generateConfig)
+
+// WithOutputSuffix overrides the generated file name suffix.
+// Default: "_enum.gen.go".
+func WithOutputSuffix(suffix string) GenerateOption {
+	return func(c *generateConfig) {
+		if suffix != "" {
+			c.outputSuffix = suffix
+		}
+	}
+}
+
+// WithJSON enables or disables generation of MarshalJSON/UnmarshalJSON methods.
+// Default: true.
+func WithJSON(enabled bool) GenerateOption {
+	return func(c *generateConfig) {
+		c.withJSON = enabled
+	}
+}
+
+// WithSQL enables or disables generation of driver.Valuer and sql.Scanner methods.
+// Default: true.
+func WithSQL(enabled bool) GenerateOption {
+	return func(c *generateConfig) {
+		c.withSQL = enabled
+	}
+}
+
+// WithExhaustive enables or disables generation of the Exhaustive() method.
+// Default: true.
+func WithExhaustive(enabled bool) GenerateOption {
+	return func(c *generateConfig) {
+		c.withExhaustive = enabled
+	}
+}
+
+func applyGenerateOptions(opts []GenerateOption) *generateConfig {
+	c := &generateConfig{
+		outputSuffix:   "_enum.gen.go",
+		withJSON:       true,
+		withSQL:        true,
+		withExhaustive: true,
+	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
+}
+
+// buildImports assembles the import paths needed by the generated file.
+// fmt is included only when at least one generated method requires it.
+func buildImports(c *generateConfig, info *EnumInfo) []string {
+	var imports []string
+
+	// fmt is needed by Parse<Type> (HasString) and Scan (WithSQL).
+	needsFmt := info.HasString || c.withSQL
+	if needsFmt {
+		imports = append(imports, `"fmt"`)
+	}
+	if c.withJSON {
+		imports = append(imports, `"encoding/json"`)
+	}
+	if c.withSQL {
+		imports = append(imports, `"database/sql/driver"`)
+	}
+	return imports
+}
+
 // EnumInfo holds the data extracted from the source files used to generate code.
 type EnumInfo struct {
-	PkgName   string
-	TypeName  string
-	Kind      string // "string" or "int"
-	Constants []string
-	Values    []string // raw constant value
-	HasString bool
-	HasInt    bool
+	PkgName        string
+	TypeName       string
+	Kind           string // "string" or "int"
+	Constants      []string
+	Values         []string // raw constant values
+	HasString      bool
+	HasInt         bool
+	WithJSON       bool
+	WithSQL        bool
+	WithExhaustive bool
+	Imports        []string
 }
 
 // Generate is the main entry point invoked by the command.
-func Generate(dir string, typeName string) error {
+func Generate(dir string, typeName string, opts ...GenerateOption) error {
+	c := applyGenerateOptions(opts)
+
 	fset := token.NewFileSet()
-	// Parse every .go file in the directory, excluding previously generated output.
 	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
-		return !strings.HasSuffix(fi.Name(), "_enum.gen.go")
+		return !strings.HasSuffix(fi.Name(), c.outputSuffix)
 	}, parser.ParseComments)
 	if err != nil {
 		return fmt.Errorf("parser error: %w", err)
@@ -37,7 +119,6 @@ func Generate(dir string, typeName string) error {
 	var pkgName string
 	var allDecls []ast.Decl
 
-	// Walk every package (typically only one) and collect all declarations.
 	for _, pkg := range pkgs {
 		if pkgName == "" {
 			pkgName = pkg.Name
@@ -53,8 +134,20 @@ func Generate(dir string, typeName string) error {
 
 	info.PkgName = pkgName
 	info.TypeName = typeName
+	info.WithJSON = c.withJSON
+	info.WithSQL = c.withSQL
+	info.WithExhaustive = c.withExhaustive
 
-	// Find constants of the requested type across every declaration.
+	if info.Kind == "int" {
+		for _, v := range info.Values {
+			if _, err := fmt.Sscanf(v, "%d", new(int)); err == nil {
+				info.HasInt = true
+			} else {
+				info.HasString = true
+			}
+		}
+	}
+
 	for _, decl := range allDecls {
 		genDecl, ok := decl.(*ast.GenDecl)
 		if !ok || genDecl.Tok != token.CONST {
@@ -67,18 +160,15 @@ func Generate(dir string, typeName string) error {
 				continue
 			}
 
-			// Skip constants that do not belong to the target type.
 			if valueSpec.Type != nil {
 				ident, ok := valueSpec.Type.(*ast.Ident)
 				if !ok || ident.Name != typeName {
 					continue
 				}
 			} else {
-				// Constant without an explicit type: skip.
 				continue
 			}
 
-			// Collect the value for each constant name.
 			for i, name := range valueSpec.Names {
 				info.Constants = append(info.Constants, name.Name)
 				if len(valueSpec.Values) > i {
@@ -98,7 +188,6 @@ func Generate(dir string, typeName string) error {
 		return fmt.Errorf("no constants of type %s found", typeName)
 	}
 
-	// Decide the underlying kind from the observed values.
 	if len(info.Values) > 0 && info.Values[0] != "" {
 		if _, err := fmt.Sscanf(info.Values[0], "%d", new(int)); err == nil {
 			info.Kind = "int"
@@ -122,21 +211,21 @@ func Generate(dir string, typeName string) error {
 		}
 	}
 
-	// Render the generated code.
-	return generateCode(dir, info)
+	info.Imports = buildImports(c, &info)
+	return generateCode(dir, c.outputSuffix, info)
 }
 
-// Template for the generated code.
 const enumTemplate = `// Code generated by Typed Enum Generator; DO NOT EDIT.
 
 package {{.PkgName}}
 
-{{if .HasString}}
-import "fmt"
-import "encoding/json"
-import "database/sql/driver"
+{{if .Imports}}
+import (
+{{- range .Imports}}
+	{{.}}
+{{- end}}
+)
 {{end}}
-
 
 // ===== Generated methods for enum {{.TypeName}} =====
 
@@ -179,6 +268,7 @@ func Parse{{.TypeName}}(s string) ({{.TypeName}}, error) {
 }
 {{end}}
 
+{{if .WithJSON}}
 // MarshalJSON implements the json.Marshaler interface.
 func (t {{.TypeName}}) MarshalJSON() ([]byte, error) {
 	return json.Marshal(string(t))
@@ -197,7 +287,9 @@ func (t *{{.TypeName}}) UnmarshalJSON(data []byte) error {
 	*t = val
 	return nil
 }
+{{end}}
 
+{{if .WithSQL}}
 // Value implements the driver.Valuer interface for database/sql.
 func (t {{.TypeName}}) Value() (driver.Value, error) {
 	return string(t), nil
@@ -220,6 +312,7 @@ func (t *{{.TypeName}}) Scan(value interface{}) error {
 	*t = val
 	return nil
 }
+{{end}}
 
 // {{.TypeName}}FromIndex returns the enum value at the given index.
 func {{.TypeName}}FromIndex(idx int) {{.TypeName}} {
@@ -229,15 +322,25 @@ func {{.TypeName}}FromIndex(idx int) {{.TypeName}} {
 		return {{$c}}
 {{- end}}
 	default:
-		return {{(index .Constants 0)}} // default value
+		return {{(index .Constants 0)}}
 	}
 }
 
+// Index returns the 0-based position of the constant.
+func (t {{.TypeName}}) Index() int {
+	switch t {
+{{- range $i, $c := .Constants}}
+	case {{$c}}:
+		return {{$i}}
+{{- end}}
+	default:
+		return -1
+	}
+}
 
-// ===== Exhaustive switch =====
+{{if .WithExhaustive}}
 // Exhaustive forces every constant to be handled at the call site.
-// If a new constant is added without updating this method, the call panics
-// at runtime instead of silently returning an empty value.
+// Panics if a new constant is added without updating this method.
 func (t {{.TypeName}}) Exhaustive() string {
 	switch t {
 {{- range $i, $c := .Constants}}
@@ -248,23 +351,11 @@ func (t {{.TypeName}}) Exhaustive() string {
 		panic("unreachable: enum {{.TypeName}} has unhandled constant")
 	}
 }
-
-// Index returns the 0-based position of the constant.
-// Useful with EnumSet or any structure that depends on a fixed ordering.
-func (t {{.TypeName}}) Index() int {
-	switch t {
-{{- range $i, $c := .Constants}}
-	case {{$c}}:
-		return {{$i}}
-{{- end}}
-	default:
-		return -1 // invalid value, should never happen
-	}
-}
+{{end}}
 `
 
-func generateCode(dir string, info EnumInfo) error {
-	outputName := strings.ToLower(info.TypeName) + "_enum.gen.go"
+func generateCode(dir, suffix string, info EnumInfo) error {
+	outputName := strings.ToLower(info.TypeName) + suffix
 	outputPath := filepath.Join(dir, outputName)
 
 	f, err := os.Create(outputPath)

@@ -40,9 +40,12 @@ func FromFunc[T any](f func() (T, bool)) *Stream[T] {
 	return NewStream(f)
 }
 
-// ToSlice collects all elements of the Stream into a slice.
-func (s *Stream[T]) ToSlice() []T {
-	result := make([]T, 0, 256)
+// ToSlice collects all elements into a slice.
+// Accepts an optional WithInitialCap to pre-size the buffer.
+// Default initial capacity: 256.
+func (s *Stream[T]) ToSlice(opts ...Option) []T {
+	c := applyStreamOptions(opts)
+	result := make([]T, 0, c.initialCap)
 	for {
 		val, ok := s.next()
 		if !ok {
@@ -53,7 +56,7 @@ func (s *Stream[T]) ToSlice() []T {
 	return result
 }
 
-// ForEach applies a function to each element of the Stream.
+// ForEach applies a function to each element.
 func (s *Stream[T]) ForEach(f func(T)) {
 	for {
 		val, ok := s.next()
@@ -90,7 +93,7 @@ func (s *Stream[T]) Any(pred func(T) bool) bool {
 	}
 }
 
-// All returns true if all elements satisfy the predicate.
+// All returns true if all elements satisfy the predicate (short-circuit).
 func (s *Stream[T]) All(pred func(T) bool) bool {
 	for {
 		val, ok := s.next()
@@ -99,7 +102,7 @@ func (s *Stream[T]) All(pred func(T) bool) bool {
 		}
 		if !pred(val) {
 			return false
-		} // short-circuit!
+		}
 	}
 }
 
@@ -116,7 +119,7 @@ func (s *Stream[T]) Reduce(initial T, acc func(T, T) T) T {
 	return result
 }
 
-// FindFirst returns the first element that satisfies the predicate as an Optional.
+// FindFirst returns the first element satisfying the predicate as an Optional.
 func FindFirst[T any](s *Stream[T], pred func(T) bool) opt.Optional[T] {
 	for {
 		val, ok := s.next()

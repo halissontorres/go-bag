@@ -18,7 +18,7 @@ func TestBTreeIterator_EmptyTree(t *testing.T) {
 func TestBTreeIterator_InOrderTraversal(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSetWithDegree[int](3)
+	s := NewBTreeSet[int](WithMinDegree(3))
 	values := []int{50, 10, 80, 30, 20, 60, 90, 40, 70, 5, 15, 25, 35, 45, 55, 65, 75, 85, 95}
 	for _, v := range values {
 		s.Add(v)
@@ -43,7 +43,7 @@ func TestBTreeIterator_InOrderTraversal(t *testing.T) {
 func TestBTreeIterator_FromKey(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSetWithDegree[int](3)
+	s := NewBTreeSet[int](WithMinDegree(3))
 	for _, v := range []int{10, 20, 30, 40, 50, 60, 70, 80, 90} {
 		s.Add(v)
 	}

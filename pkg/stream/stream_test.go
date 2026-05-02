@@ -328,9 +328,6 @@ func BenchmarkSorted(b *testing.B) {
 	}
 }
 
-// stream_test.go
-
-// Test operations without intermediate slice allocation
 func BenchmarkCount(b *testing.B) {
 	input := make([]int, 1000)
 	for i := range input {
@@ -381,19 +378,6 @@ func BenchmarkDistinctManyDuplicates(b *testing.B) {
 	}
 }
 
-// Test a pipeline with Skip+Limit (sliding window)
-func BenchmarkWindowedPipeline(b *testing.B) {
-	input := make([]int, 10000)
-	for i := range input {
-		input[i] = i
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		s := FromSlice(input)
-		_ = Limit(Skip(s, 100), 50).ToSlice()
-	}
-}
-
 // Test Sorted with already sorted data (the worst case for some algorithms)
 func BenchmarkSortedAlreadySorted(b *testing.B) {
 	input := make([]int, 1000)
@@ -407,8 +391,71 @@ func BenchmarkSortedAlreadySorted(b *testing.B) {
 	}
 }
 
+func TestToSlice_WithInitialCap_BehaviorIdentical(t *testing.T) {
+	input := []int{1, 2, 3, 4, 5}
+	result := FromSlice(input).ToSlice(WithInitialCap(10))
+	if !reflect.DeepEqual(input, result) {
+		t.Errorf("Expected %v, got %v", input, result)
+	}
+}
+
+func TestToSlice_WithInitialCap_Zero_Ignored(t *testing.T) {
+	input := []int{1, 2, 3}
+	result := FromSlice(input).ToSlice(WithInitialCap(0))
+	if !reflect.DeepEqual(input, result) {
+		t.Errorf("Expected %v, got %v", input, result)
+	}
+}
+
+func TestToSlice_WithInitialCap_Negative_Ignored(t *testing.T) {
+	input := []int{7, 8, 9}
+	result := FromSlice(input).ToSlice(WithInitialCap(-5))
+	if !reflect.DeepEqual(input, result) {
+		t.Errorf("Expected %v, got %v", input, result)
+	}
+}
+
+func TestDistinct_WithInitialCap(t *testing.T) {
+	input := []int{1, 2, 2, 3, 1, 4}
+	result := Distinct(FromSlice(input), WithInitialCap(10)).ToSlice()
+	expected := []int{1, 2, 3, 4}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestSorted_WithInitialCap(t *testing.T) {
+	input := []int{3, 1, 4, 1, 5, 9, 2}
+	result := Sorted(FromSlice(input), WithInitialCap(len(input))).ToSlice()
+	expected := []int{1, 1, 2, 3, 4, 5, 9}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestSorted_WithInitialCap_Zero_Ignored(t *testing.T) {
+	input := []int{5, 3, 1}
+	result := Sorted(FromSlice(input), WithInitialCap(0)).ToSlice()
+	expected := []int{1, 3, 5}
+	if !reflect.DeepEqual(expected, result) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func BenchmarkWindowedPipeline(b *testing.B) {
+	input := make([]int, 10000)
+	for i := range input {
+		input[i] = i
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s := FromSlice(input)
+		_ = Limit(Skip(s, 100), 50).ToSlice()
+	}
+}
+
 func BenchmarkSortedLarge(b *testing.B) {
-	input := make([]int, 100000) // 100k elementos
+	input := make([]int, 100000)
 	for i := range input {
 		input[i] = rand.Intn(100000)
 	}
@@ -423,7 +470,7 @@ func BenchmarkDistinctHighCardinality(b *testing.B) {
 	input := make([]int, 10000)
 	for i := range input {
 		input[i] = i
-	} // todos únicos
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := FromSlice(input)
@@ -446,4 +493,70 @@ func BenchmarkNestedFlatMap(b *testing.B) {
 		}).ToSlice()
 		_ = result
 	}
+}
+
+func BenchmarkToSlice_InitialCap(b *testing.B) {
+	const N = 10000
+	input := make([]int, N)
+	for i := range input {
+		input[i] = i
+	}
+
+	b.Run("DefaultCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = FromSlice(input).ToSlice()
+		}
+	})
+
+	b.Run("WithInitialCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = FromSlice(input).ToSlice(WithInitialCap(N))
+		}
+	})
+}
+
+func BenchmarkDistinct_InitialCap(b *testing.B) {
+	const N = 10000
+	input := make([]int, N)
+	for i := range input {
+		input[i] = i // todos únicos — pior caso para o map
+	}
+
+	b.Run("DefaultCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = Distinct(FromSlice(input)).ToSlice()
+		}
+	})
+
+	b.Run("WithInitialCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = Distinct(FromSlice(input), WithInitialCap(N)).ToSlice()
+		}
+	})
+}
+
+func BenchmarkSorted_InitialCap(b *testing.B) {
+	const N = 10000
+	input := make([]int, N)
+	for i := range input {
+		input[i] = rand.Intn(N)
+	}
+
+	b.Run("DefaultCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = Sorted(FromSlice(input)).ToSlice()
+		}
+	})
+
+	b.Run("WithInitialCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = Sorted(FromSlice(input), WithInitialCap(N)).ToSlice()
+		}
+	})
 }

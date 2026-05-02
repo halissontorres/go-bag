@@ -14,9 +14,10 @@ type KeyValuePair[K any, V any] struct {
 	Value V
 }
 
-func NewBTreeMap[K cmp.Ordered, V any]() *BTreeMap[K, V] {
+func NewBTreeMap[K cmp.Ordered, V any](opts ...Option) *BTreeMap[K, V] {
+	c := applyTreeOptions(opts)
 	return &BTreeMap[K, V]{
-		tree: newBTree[K](defaultMinDegree),
+		tree: newBTree[K](c.minDegree),
 		vals: make(map[K]V),
 	}
 }
