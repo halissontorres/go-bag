@@ -9,9 +9,10 @@ type Stack[T any] struct {
 }
 
 // NewStack creates a new, empty stack.
-func NewStack[T any]() *Stack[T] {
+func NewStack[T any](opts ...Option) *Stack[T] {
+	c := applyStackOptions(opts)
 	return &Stack[T]{
-		items: make([]T, 0),
+		items: make([]T, 0, c.initialCap),
 	}
 }
 
@@ -29,6 +30,8 @@ func (s *Stack[T]) Pop() (T, bool) {
 	}
 	index := len(s.items) - 1
 	val := s.items[index]
+	var zero T
+	s.items[index] = zero // help the GC reclaim referenced memory
 	s.items = s.items[:index]
 	return val, true
 }
@@ -57,8 +60,7 @@ func (s *Stack[T]) Clear() {
 	s.items = s.items[:0]
 }
 
-// Elements returns a slice with all elements in stack order
-// (bottom to top).
+// Elements returns a slice with all elements in stack order (bottom to top).
 func (s *Stack[T]) Elements() []T {
 	if len(s.items) == 0 {
 		return nil
@@ -74,8 +76,9 @@ type SyncStack[T any] struct {
 	s  *Stack[T]
 }
 
-func NewSyncStack[T any]() *SyncStack[T] {
-	return &SyncStack[T]{s: NewStack[T]()}
+// NewSyncStack creates a new, empty thread-safe stack.
+func NewSyncStack[T any](opts ...Option) *SyncStack[T] {
+	return &SyncStack[T]{s: NewStack[T](opts...)}
 }
 
 func (ss *SyncStack[T]) Push(val T) {
