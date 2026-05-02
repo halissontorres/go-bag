@@ -11,7 +11,7 @@ func TestDAG_AddVertex(t *testing.T) {
 
 	g := NewDAG[string]()
 	if !g.AddVertex("a") {
-		t.Fatalf("AddVertex(a) should return true on first insert")
+		t.Fatalf("AddVertex(a) should return true on the first insert")
 	}
 	if g.AddVertex("a") {
 		t.Fatalf("AddVertex(a) should return false on duplicate")
@@ -42,13 +42,12 @@ func TestDAG_AddEdge(t *testing.T) {
 		t.Fatalf("AddEdge(1,1) should fail (self-loop)")
 	}
 	if g.AddEdge(1, 99) {
-		t.Fatalf("AddEdge with missing destination should fail")
+		t.Fatalf("AddEdge with a missing destination should fail")
 	}
 	if g.AddEdge(99, 1) {
-		t.Fatalf("AddEdge with missing source should fail")
+		t.Fatalf("AddEdge with a missing source should fail")
 	}
 
-	// 1 -> 2 -> 3, then 3 -> 1 would close a cycle.
 	if !g.AddEdge(2, 3) {
 		t.Fatalf("AddEdge(2,3) should succeed")
 	}
@@ -127,7 +126,6 @@ func TestDAG_TopologicalSort(t *testing.T) {
 	for _, v := range []string{"a", "b", "c", "d", "e"} {
 		g.AddVertex(v)
 	}
-	// a -> b -> d, a -> c -> d -> e
 	g.AddEdge("a", "b")
 	g.AddEdge("a", "c")
 	g.AddEdge("b", "d")
@@ -204,7 +202,6 @@ func TestDAG_HasPath(t *testing.T) {
 	}
 	g.AddEdge(1, 2)
 	g.AddEdge(2, 3)
-	// 4 is disconnected.
 
 	if !g.HasPath(1, 3) {
 		t.Fatalf("HasPath(1,3) should be true")
@@ -227,7 +224,6 @@ func TestDAG_AncestorsAndDescendants(t *testing.T) {
 	for _, v := range []int{1, 2, 3, 4, 5} {
 		g.AddVertex(v)
 	}
-	// 1 -> 2 -> 4, 1 -> 3 -> 4, 4 -> 5
 	g.AddEdge(1, 2)
 	g.AddEdge(1, 3)
 	g.AddEdge(2, 4)
@@ -271,7 +267,99 @@ func TestDAG_String(t *testing.T) {
 	}
 }
 
-// ---------- Benchmarks ----------
+func TestDAG_WithInitialVertices(t *testing.T) {
+	t.Parallel()
+
+	// Comportamento deve ser idêntico ao padrão — a option só afeta alocação interna.
+	g := NewDAG[int](WithInitialVertices[int](100))
+
+	for i := 0; i < 10; i++ {
+		g.AddVertex(i)
+	}
+	for i := 0; i < 9; i++ {
+		if !g.AddEdge(i, i+1) {
+			t.Fatalf("AddEdge(%d,%d) should succeed", i, i+1)
+		}
+	}
+
+	order, ok := g.TopologicalSort()
+	if !ok {
+		t.Fatalf("TopologicalSort should succeed")
+	}
+	if len(order) != 10 {
+		t.Fatalf("order len=%d want 10", len(order))
+	}
+}
+
+func TestDAG_WithSkipCycleCheck_AllowsBackEdge(t *testing.T) {
+	t.Parallel()
+
+	// Com skip, uma back-edge é aceita — o DAG fica corrompido,
+	// mas isso é responsabilidade do chamador.
+	g := NewDAG[int](WithSkipCycleCheck[int]())
+	g.AddVertex(1)
+	g.AddVertex(2)
+	g.AddVertex(3)
+
+	g.AddEdge(1, 2)
+	g.AddEdge(2, 3)
+
+	// 3 -> 1 fecharia um ciclo; sem a verificação, é aceito.
+	if !g.AddEdge(3, 1) {
+		t.Fatalf("WithSkipCycleCheck: back-edge should be accepted")
+	}
+}
+
+func TestDAG_WithSkipCycleCheck_StillRejectsDuplicateAndSelfLoop(t *testing.T) {
+	t.Parallel()
+
+	// Skip só desativa o DFS de ciclo — as outras validações permanecem.
+	g := NewDAG[int](WithSkipCycleCheck[int]())
+	g.AddVertex(1)
+	g.AddVertex(2)
+	g.AddEdge(1, 2)
+
+	if g.AddEdge(1, 2) {
+		t.Fatalf("duplicate edge should still be rejected with skip")
+	}
+	if g.AddEdge(1, 1) {
+		t.Fatalf("self-loop should still be rejected with skip")
+	}
+	if g.AddEdge(1, 99) {
+		t.Fatalf("missing vertex should still be rejected with skip")
+	}
+}
+
+func TestDAG_WithSkipCycleCheck_ValidGraphBehavesNormally(t *testing.T) {
+	t.Parallel()
+
+	// Um grafo acíclico construído com skip deve funcionar normalmente.
+	g := NewDAG[string](WithSkipCycleCheck[string]())
+	for _, v := range []string{"a", "b", "c", "d"} {
+		g.AddVertex(v)
+	}
+	g.AddEdge("a", "b")
+	g.AddEdge("a", "c")
+	g.AddEdge("b", "d")
+	g.AddEdge("c", "d")
+
+	order, ok := g.TopologicalSort()
+	if !ok {
+		t.Fatalf("valid DAG with skip should sort correctly")
+	}
+
+	pos := make(map[string]int, len(order))
+	for i, v := range order {
+		pos[v] = i
+	}
+	for _, edge := range [][2]string{{"a", "b"}, {"a", "c"}, {"b", "d"}, {"c", "d"}} {
+		if pos[edge[0]] >= pos[edge[1]] {
+			t.Fatalf("order violates %s -> %s", edge[0], edge[1])
+		}
+	}
+}
+
+// ---- Benchmarks ----
 
 func buildLinearDAG(n int) *DAG[int] {
 	g := NewDAG[int]()
@@ -296,6 +384,64 @@ func BenchmarkDAG_AddEdge(b *testing.B) {
 			g.AddEdge(i, i+1)
 		}
 	}
+}
+
+// BenchmarkDAG_AddEdge_SkipVsCheck evidencia o ganho de WithSkipCycleCheck
+// em grafos lineares grandes, onde o DFS percorre caminhos longos.
+func BenchmarkDAG_AddEdge_SkipVsCheck(b *testing.B) {
+	const N = 1024
+
+	b.Run("WithCycleCheck", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			g := NewDAG[int]()
+			for i := 0; i < N; i++ {
+				g.AddVertex(i)
+			}
+			for i := 0; i < N-1; i++ {
+				g.AddEdge(i, i+1)
+			}
+		}
+	})
+
+	b.Run("WithSkipCycleCheck", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			g := NewDAG[int](WithSkipCycleCheck[int]())
+			for i := 0; i < N; i++ {
+				g.AddVertex(i)
+			}
+			for i := 0; i < N-1; i++ {
+				g.AddEdge(i, i+1)
+			}
+		}
+	})
+}
+
+// BenchmarkDAG_AddEdge_InitialVertices evidencia a redução de allocs
+// quando o tamanho do grafo é conhecido antecipadamente.
+func BenchmarkDAG_AddEdge_InitialVertices(b *testing.B) {
+	const N = 1024
+
+	b.Run("NoHint", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			g := NewDAG[int]()
+			for i := 0; i < N; i++ {
+				g.AddVertex(i)
+			}
+		}
+	})
+
+	b.Run("WithHint", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			g := NewDAG[int](WithInitialVertices[int](N))
+			for i := 0; i < N; i++ {
+				g.AddVertex(i)
+			}
+		}
+	})
 }
 
 func BenchmarkDAG_TopologicalSort(b *testing.B) {

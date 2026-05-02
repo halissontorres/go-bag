@@ -13,17 +13,23 @@ import (
 // edge lookup for O(out-degree) lookup, but eliminates the per-vertex
 // inner map allocation and is faster on sparse graphs (the common case).
 type DAG[T comparable] struct {
-	vertices map[T]struct{}
-	adj      map[T][]T // outgoing edges: source -> destinations
-	inDegree map[T]int
+	vertices       map[T]struct{}
+	adj            map[T][]T
+	inDegree       map[T]int
+	skipCycleCheck bool
 }
 
 // NewDAG creates an empty DAG.
-func NewDAG[T comparable]() *DAG[T] {
+func NewDAG[T comparable](opts ...DAGOption[T]) *DAG[T] {
+	c := &dagConfig{}
+	for _, o := range opts {
+		o(c)
+	}
 	return &DAG[T]{
-		vertices: make(map[T]struct{}),
-		adj:      make(map[T][]T),
-		inDegree: make(map[T]int),
+		vertices:       make(map[T]struct{}, c.initialVertices),
+		adj:            make(map[T][]T, c.initialVertices),
+		inDegree:       make(map[T]int, c.initialVertices),
+		skipCycleCheck: c.skipCycleCheck,
 	}
 }
 
@@ -35,13 +41,12 @@ func (g *DAG[T]) AddVertex(v T) bool {
 	}
 	g.vertices[v] = struct{}{}
 	g.inDegree[v] = 0
-	// adj[v] is left nil; append handles the first edge insertion lazily.
 	return true
 }
 
 // AddEdge inserts a directed edge from -> to.
 // Returns false if either vertex is missing, the edge already exists,
-// or adding it would introduce a cycle.
+// or — unless WithSkipCycleCheck was set — adding it would introduce a cycle.
 func (g *DAG[T]) AddEdge(from, to T) bool {
 	if _, ok := g.vertices[from]; !ok {
 		return false
@@ -50,17 +55,15 @@ func (g *DAG[T]) AddEdge(from, to T) bool {
 		return false
 	}
 	if from == to {
-		return false // self-loops are not allowed
+		return false
 	}
 	for _, n := range g.adj[from] {
 		if n == to {
-			return false // edge already exists
+			return false
 		}
 	}
 
-	// A cycle is only possible if 'to' has outgoing edges; otherwise 'to'
-	// trivially cannot reach 'from'. Skipping the DFS is safe and cheap.
-	if len(g.adj[to]) > 0 && g.hasPath(to, from) {
+	if !g.skipCycleCheck && len(g.adj[to]) > 0 && g.hasPath(to, from) {
 		return false
 	}
 
@@ -75,11 +78,9 @@ func (g *DAG[T]) RemoveVertex(v T) bool {
 		return false
 	}
 
-	// Drop outgoing edges: just decrement targets' in-degree.
 	for _, neighbor := range g.adj[v] {
 		g.inDegree[neighbor]--
 	}
-	// Drop incoming edges: scan every other source's adjacency slice.
 	for src, dests := range g.adj {
 		if src == v {
 			continue
@@ -163,7 +164,7 @@ func (g *DAG[T]) TopologicalSort() ([]T, bool) {
 	}
 
 	if len(order) != n {
-		return nil, false // cycle present (should not happen when edges are added through AddEdge)
+		return nil, false
 	}
 	return order, true
 }
@@ -192,13 +193,12 @@ func (g *DAG[T]) Edges() [][2]T {
 	return edges
 }
 
-// HasPath reports whether a path from -> to exists, using DFS.
+// HasPath reports whether a path from -> to exists.
 func (g *DAG[T]) HasPath(from, to T) bool {
 	return g.hasPath(from, to)
 }
 
-// hasPath performs an iterative DFS without cycle bookkeeping.
-// Internal hot path: uses raw map/slice to avoid wrapper allocations.
+// hasPath performs an iterative DFS.
 func (g *DAG[T]) hasPath(from, to T) bool {
 	visited := make(map[T]struct{})
 	stack := []T{from}
@@ -221,9 +221,6 @@ func (g *DAG[T]) hasPath(from, to T) bool {
 // Ancestors returns every vertex that can reach v (excluding v itself).
 func (g *DAG[T]) Ancestors(v T) *set.Set[T] {
 	anc := set.NewSet[T]()
-	// Walk reverse edges from v with a slice-as-queue (index advance,
-	// no per-step reslicing) and a raw visited map. Both are pre-sized
-	// to len(vertices) so BFS never reallocates.
 	reverseAdj := g.reverseAdj()
 	n := len(g.vertices)
 	visited := make(map[T]struct{}, n)
