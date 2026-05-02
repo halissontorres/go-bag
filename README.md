@@ -137,6 +137,11 @@ unique := stream.Sorted(
     stream.Distinct(stream.FromSlice([]int{3, 1, 2, 1, 3})),
 ).ToSlice() // [1 2 3]
 
+// Pre-size the internal buffer for large streams.
+big := stream.FromSlice(make([]int, 10_000)).
+    ToSlice(stream.WithInitialCap(10_000))
+_ = big
+
 // Aggregate
 sum := stream.FromSlice([]int{1, 2, 3, 4}).
     Reduce(0, func(a, b int) int { return a + b }) // 10
@@ -241,9 +246,20 @@ sh.Push(3)
 sh.Push(1)
 sh.Push(2)
 min, _ = sh.Pop() // 1
+
+// Functional options: Min-Heap (default), Max-Heap, or custom comparator.
+maxH := heap.New[int](heap.WithMaxHeap[int]())
+maxH.Push(10); maxH.Push(30); maxH.Push(20)
+top, _ := maxH.Pop() // 30
+
+byLen := heap.New[string](heap.WithLessFunc(func(a, b string) bool {
+    return len(a) < len(b)
+}))
+byLen.Push("go"); byLen.Push("rust"); byLen.Push("c")
+shortest, _ := byLen.Pop() // "c"
 ```
 
-> **Note:** `Heap` is a Min-Heap — `Pop` always returns the smallest element. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
+> **Note:** `Heap` defaults to a Min-Heap — `Pop` returns the smallest element. Use `WithMaxHeap` or `WithLessFunc` to change the ordering. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
 
 ### Queue
 
@@ -264,6 +280,10 @@ fmt.Println(q.Elements()) // [b c]
 
 q.Clear()
 fmt.Println(q.IsEmpty()) // true
+
+// Pre-size the internal buffer to avoid early reallocations.
+large := queue.NewQueue[int](queue.WithInitialCap(1024))
+_ = large
 
 // Thread-safe variant — same API, protected by a sync.RWMutex.
 sq := queue.NewSyncQueue[int]()
@@ -294,8 +314,8 @@ fmt.Println(d.Len())      // 1
 fmt.Println(d.Elements()) // [1]
 fmt.Println(d.String())   // [1]
 
-// Custom initial capacity to avoid early reallocations.
-large := queue.NewDequeWithCap[float64](256)
+// Custom initial capacity via functional option to avoid early reallocations.
+large := queue.NewDeque[float64](queue.WithInitialCap(256))
 
 // Thread-safe variant.
 sd := queue.NewSyncDeque[string]()
@@ -323,6 +343,10 @@ fmt.Println(s.Elements()) // [10 20] — bottom to top
 
 s.Clear()
 fmt.Println(s.IsEmpty()) // true
+
+// Pre-size the internal slice to avoid early reallocations.
+large := stack.NewStack[int](stack.WithInitialCap(512))
+_ = large
 
 // Thread-safe variant — same API, protected by a sync.RWMutex.
 ss := stack.NewSyncStack[string]()
@@ -459,8 +483,10 @@ v, _ := it2.Next() // 3
 s.Remove(3)
 fmt.Println(s.Elements()) // [1 5 8]
 
-// Custom minimum degree (controls tree fanout).
-large := tree.NewBTreeSetWithDegree[string](16)
+// Custom minimum degree via functional option (controls tree fanout).
+// Each node holds between t-1 and 2t-1 keys; higher values reduce height
+// but increase per-node memory usage.
+large := tree.NewBTreeSet[string](tree.WithMinDegree(16))
 _ = large
 ```
 
@@ -501,6 +527,10 @@ m.ForEach(func(k string, v int) {
 
 m.Remove("banana")
 fmt.Println(m.Len()) // 2
+
+// Custom minimum degree via functional option.
+wide := tree.NewBTreeMap[int, string](tree.WithMinDegree(8))
+_ = wide
 ```
 
 ### DAG
@@ -554,6 +584,15 @@ g.RemoveEdge("C", "D")
 g.RemoveVertex("C")
 
 fmt.Println(g.String()) // textual adjacency list
+
+// Functional options: pre-allocate vertices or skip the cycle check.
+large := graph.NewDAG[int](graph.WithInitialVertices[int](1000))
+_ = large
+
+// WithSkipCycleCheck disables the DFS guard — use only when the caller
+// guarantees no back-edges (e.g. building from a pre-validated source).
+fast := graph.NewDAG[string](graph.WithSkipCycleCheck[string]())
+_ = fast
 ```
 
 > **Note:** `AddEdge` performs a cycle check before insertion, so the graph is always acyclic. Attempting to add an edge that would close a cycle returns `false`.
@@ -586,6 +625,19 @@ go run github.com/halissontorres/go-bag/cmd -dir . -type Status
 # Or wire it to go generate:
 //go:generate go run github.com/halissontorres/go-bag/cmd -dir . -type Status
 go generate ./...
+```
+
+The generator also exposes a Go API with functional options:
+
+```go
+import "github.com/halissontorres/go-bag/pkg/enum"
+
+err := enum.Generate(".", "Status",
+    enum.WithOutputSuffix("_enum.gen.go"), // default
+    enum.WithJSON(true),                   // emit MarshalJSON/UnmarshalJSON (default: true)
+    enum.WithSQL(true),                    // emit driver.Valuer / sql.Scanner (default: true)
+    enum.WithExhaustive(true),             // emit Exhaustive() method (default: true)
+)
 ```
 
 **3. Use the generated code:**
