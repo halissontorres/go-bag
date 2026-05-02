@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Filter returns a Stream containing only the elements that satisfy the predicate.
+// Filter returns a Stream containing only elements that satisfy the predicate.
 func Filter[T any](s *Stream[T], pred func(T) bool) *Stream[T] {
 	return NewStream(func() (T, bool) {
 		for {
@@ -21,7 +21,7 @@ func Filter[T any](s *Stream[T], pred func(T) bool) *Stream[T] {
 	})
 }
 
-// Map transforms each element of the Stream using function f.
+// Map transforms each element using function f.
 func Map[T, U any](s *Stream[T], f func(T) U) *Stream[U] {
 	return NewStream(func() (U, bool) {
 		val, ok := s.next()
@@ -44,7 +44,6 @@ func FlatMap[T, U any](s *Stream[T], f func(T) []U) *Stream[U] {
 				idx++
 				return val, true
 			}
-			// gets next source element
 			elem, ok := s.next()
 			if !ok {
 				var zero U
@@ -56,9 +55,12 @@ func FlatMap[T, U any](s *Stream[T], f func(T) []U) *Stream[U] {
 	})
 }
 
-// Distinct eliminates duplicates (keeps the first occurrence). Requires comparable.
-func Distinct[T comparable](s *Stream[T]) *Stream[T] {
-	seen := make(map[T]struct{}, 256)
+// Distinct eliminates duplicates (keeps first occurrence). Requires comparable.
+// Accepts an optional WithInitialCap to pre-size the internal seen-map.
+// Default initial capacity: 256.
+func Distinct[T comparable](s *Stream[T], opts ...Option) *Stream[T] {
+	c := applyStreamOptions(opts)
+	seen := make(map[T]struct{}, c.initialCap)
 	return NewStream(func() (T, bool) {
 		for {
 			val, ok := s.next()
@@ -74,10 +76,12 @@ func Distinct[T comparable](s *Stream[T]) *Stream[T] {
 	})
 }
 
-// Sorted collects all elements, sorts them, and emits them. Requires Ordered.
-func Sorted[T cmp.Ordered](s *Stream[T]) *Stream[T] {
-	collected := s.ToSlice() // already optimized
-	slices.Sort(collected)   // faster than sort.Slice for ordered types
+// Sorted collects all elements, sorts them, and emits them in order.
+// Accepts an optional WithInitialCap passed through to ToSlice.
+// Requires cmp.Ordered.
+func Sorted[T cmp.Ordered](s *Stream[T], opts ...Option) *Stream[T] {
+	collected := s.ToSlice(opts...)
+	slices.Sort(collected)
 	return FromSlice(collected)
 }
 
@@ -90,31 +94,27 @@ func Limit[T any](s *Stream[T], n int) *Stream[T] {
 			return zero, false
 		}
 		val, ok := s.next()
-		if !ok {
-			var zero T
-			return zero, false
+		if ok {
+			count++
 		}
-		count++
-		return val, true
+		return val, ok
 	})
 }
 
 // Skip ignores the first n elements.
 func Skip[T any](s *Stream[T], n int) *Stream[T] {
-	skipped := 0
+	ready := false
 	return NewStream(func() (T, bool) {
-		for {
-			val, ok := s.next()
-			if !ok {
-				var zero T
-				return zero, false
+		if !ready {
+			ready = true
+			for i := 0; i < n; i++ {
+				if _, ok := s.next(); !ok {
+					var zero T
+					return zero, false
+				}
 			}
-			if skipped < n {
-				skipped++
-				continue
-			}
-			return val, true
 		}
+		return s.next()
 	})
 }
 
@@ -143,17 +143,4 @@ func Peek[T any](s *Stream[T], action func(T)) *Stream[T] {
 		}
 		return val, ok
 	})
-}
-
-// ToSliceWithCapacity collects all elements of the Stream into a slice with initial capacity hint
-func (s *Stream[T]) ToSliceWithCapacity(hint int) []T {
-	result := make([]T, 0, hint)
-	for {
-		val, ok := s.next()
-		if !ok {
-			break
-		}
-		result = append(result, val)
-	}
-	return result
 }
