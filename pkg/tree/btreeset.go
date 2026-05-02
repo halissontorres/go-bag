@@ -8,12 +8,9 @@ type BTreeSet[T cmp.Ordered] struct {
 	tree *btree[T]
 }
 
-func NewBTreeSet[T cmp.Ordered]() *BTreeSet[T] {
-	return &BTreeSet[T]{tree: newBTree[T](defaultMinDegree)}
-}
-
-func NewBTreeSetWithDegree[T cmp.Ordered](minDegree int) *BTreeSet[T] {
-	return &BTreeSet[T]{tree: newBTree[T](minDegree)}
+func NewBTreeSet[T cmp.Ordered](opts ...Option) *BTreeSet[T] {
+	c := applyTreeOptions(opts)
+	return &BTreeSet[T]{tree: newBTree[T](c.minDegree)}
 }
 
 func (s *BTreeSet[T]) Add(value T) bool {

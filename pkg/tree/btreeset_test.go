@@ -47,7 +47,7 @@ func TestBTreeSet_AddContainsRemove(t *testing.T) {
 func TestBTreeSet_RemoveAcrossSplits(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSetWithDegree[int](3)
+	s := NewBTreeSet[int](WithMinDegree(3))
 	const N = 200
 	for i := 0; i < N; i++ {
 		s.Add(i)
@@ -124,7 +124,7 @@ func TestBTreeSet_RandomizedAgainstSlice(t *testing.T) {
 	t.Parallel()
 
 	r := rand.New(rand.NewPCG(42, 99))
-	s := NewBTreeSetWithDegree[int](3)
+	s := NewBTreeSet[int](WithMinDegree(3))
 	ref := make(map[int]struct{})
 	const ops = 5_000
 
@@ -160,6 +160,43 @@ func TestBTreeSet_RandomizedAgainstSlice(t *testing.T) {
 	got := s.Elements()
 	if !slices.IsSorted(got) {
 		t.Fatalf("Elements not sorted")
+	}
+}
+
+func TestBTreeSet_WithMinDegree(t *testing.T) {
+	t.Parallel()
+
+	// Default degree (2) must work the same as explicit WithMinDegree(2).
+	s1 := NewBTreeSet[int]()
+	s2 := NewBTreeSet[int](WithMinDegree(2))
+	for i := 0; i < 100; i++ {
+		s1.Add(i)
+		s2.Add(i)
+	}
+	if !slices.Equal(s1.Elements(), s2.Elements()) {
+		t.Fatal("default degree and WithMinDegree(2) should produce identical results")
+	}
+
+	// Values below 2 are ignored; tree falls back to default.
+	s3 := NewBTreeSet[int](WithMinDegree(0))
+	for i := 0; i < 50; i++ {
+		s3.Add(i)
+	}
+	if s3.Len() != 50 {
+		t.Fatalf("len=%d want 50", s3.Len())
+	}
+
+	// Higher degree (t=5) still maintains sorted invariant.
+	s4 := NewBTreeSet[int](WithMinDegree(5))
+	const N = 300
+	for i := N - 1; i >= 0; i-- {
+		s4.Add(i)
+	}
+	if !slices.IsSorted(s4.Elements()) {
+		t.Fatal("Elements not sorted for WithMinDegree(5)")
+	}
+	if s4.Len() != N {
+		t.Fatalf("len=%d want %d", s4.Len(), N)
 	}
 }
 

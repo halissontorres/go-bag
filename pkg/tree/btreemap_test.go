@@ -104,6 +104,43 @@ func TestBTreeMap_MinMaxRange(t *testing.T) {
 	}
 }
 
+func TestBTreeMap_WithMinDegree(t *testing.T) {
+	t.Parallel()
+
+	// Default degree and WithMinDegree(2) must produce identical key order.
+	m1 := NewBTreeMap[int, string]()
+	m2 := NewBTreeMap[int, string](WithMinDegree(2))
+	for i := 0; i < 50; i++ {
+		m1.Put(i, "v")
+		m2.Put(i, "v")
+	}
+	if !slices.Equal(m1.Keys(), m2.Keys()) {
+		t.Fatal("default degree and WithMinDegree(2) should produce identical key order")
+	}
+
+	// Values below 2 are ignored; map falls back to default.
+	m3 := NewBTreeMap[int, string](WithMinDegree(1))
+	for i := 0; i < 30; i++ {
+		m3.Put(i, "x")
+	}
+	if m3.Len() != 30 {
+		t.Fatalf("len=%d want 30", m3.Len())
+	}
+
+	// Higher degree (t=4) still maintains sorted key invariant.
+	m4 := NewBTreeMap[int, int](WithMinDegree(4))
+	const N = 200
+	for i := N - 1; i >= 0; i-- {
+		m4.Put(i, i*2)
+	}
+	if !slices.IsSorted(m4.Keys()) {
+		t.Fatal("Keys not sorted for WithMinDegree(4)")
+	}
+	if m4.Len() != N {
+		t.Fatalf("len=%d want %d", m4.Len(), N)
+	}
+}
+
 // ---------- Benchmarks ----------
 
 func BenchmarkBTreeMap_Put(b *testing.B) {
