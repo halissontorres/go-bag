@@ -4,12 +4,14 @@ import (
 	"math/rand/v2"
 	"slices"
 	"testing"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 func TestBTreeSet_AddContainsRemove(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	if !s.IsEmpty() {
 		t.Fatalf("expected empty set")
 	}
@@ -19,7 +21,6 @@ func TestBTreeSet_AddContainsRemove(t *testing.T) {
 			t.Fatalf("Add(%d) should be true", v)
 		}
 	}
-	// Adding a duplicate must be a no-op.
 	if s.Add(10) {
 		t.Fatalf("Add(10) duplicate should return false")
 	}
@@ -35,7 +36,6 @@ func TestBTreeSet_AddContainsRemove(t *testing.T) {
 		t.Fatalf("should not contain 999")
 	}
 
-	// Inorder traversal must be sorted.
 	got := s.Elements()
 	want := slices.Clone(values)
 	slices.Sort(want)
@@ -47,12 +47,11 @@ func TestBTreeSet_AddContainsRemove(t *testing.T) {
 func TestBTreeSet_RemoveAcrossSplits(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSet[int](WithMinDegree(3))
+	s := NewBTreeSet(comparator.Natural[int](), WithMinDegree(3))
 	const N = 200
 	for i := 0; i < N; i++ {
 		s.Add(i)
 	}
-	// Remove every other element and check ordering and length invariants.
 	for i := 0; i < N; i += 2 {
 		if !s.Remove(i) {
 			t.Fatalf("Remove(%d) should return true", i)
@@ -77,7 +76,7 @@ func TestBTreeSet_RemoveAcrossSplits(t *testing.T) {
 func TestBTreeSet_MinMaxRange(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	for _, v := range []int{50, 10, 80, 30, 20, 60, 90, 40, 70} {
 		s.Add(v)
 	}
@@ -91,7 +90,7 @@ func TestBTreeSet_MinMaxRange(t *testing.T) {
 		t.Fatalf("Range=%v want %v", got, want)
 	}
 
-	empty := NewBTreeSet[int]()
+	empty := NewBTreeSet(comparator.Natural[int]())
 	if _, ok := empty.Min(); ok {
 		t.Fatalf("Min on empty should be false")
 	}
@@ -106,7 +105,7 @@ func TestBTreeSet_MinMaxRange(t *testing.T) {
 func TestBTreeSet_Clear(t *testing.T) {
 	t.Parallel()
 
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	for i := 0; i < 50; i++ {
 		s.Add(i)
 	}
@@ -124,7 +123,7 @@ func TestBTreeSet_RandomizedAgainstSlice(t *testing.T) {
 	t.Parallel()
 
 	r := rand.New(rand.NewPCG(42, 99))
-	s := NewBTreeSet[int](WithMinDegree(3))
+	s := NewBTreeSet(comparator.Natural[int](), WithMinDegree(3))
 	ref := make(map[int]struct{})
 	const ops = 5_000
 
@@ -156,7 +155,6 @@ func TestBTreeSet_RandomizedAgainstSlice(t *testing.T) {
 			t.Fatalf("set should contain %d", k)
 		}
 	}
-	// In-order traversal must be sorted.
 	got := s.Elements()
 	if !slices.IsSorted(got) {
 		t.Fatalf("Elements not sorted")
@@ -166,9 +164,8 @@ func TestBTreeSet_RandomizedAgainstSlice(t *testing.T) {
 func TestBTreeSet_WithMinDegree(t *testing.T) {
 	t.Parallel()
 
-	// Default degree (2) must work the same as explicit WithMinDegree(2).
-	s1 := NewBTreeSet[int]()
-	s2 := NewBTreeSet[int](WithMinDegree(2))
+	s1 := NewBTreeSet(comparator.Natural[int]())
+	s2 := NewBTreeSet(comparator.Natural[int](), WithMinDegree(2))
 	for i := 0; i < 100; i++ {
 		s1.Add(i)
 		s2.Add(i)
@@ -177,8 +174,7 @@ func TestBTreeSet_WithMinDegree(t *testing.T) {
 		t.Fatal("default degree and WithMinDegree(2) should produce identical results")
 	}
 
-	// Values below 2 are ignored; tree falls back to default.
-	s3 := NewBTreeSet[int](WithMinDegree(0))
+	s3 := NewBTreeSet(comparator.Natural[int](), WithMinDegree(0))
 	for i := 0; i < 50; i++ {
 		s3.Add(i)
 	}
@@ -186,8 +182,7 @@ func TestBTreeSet_WithMinDegree(t *testing.T) {
 		t.Fatalf("len=%d want 50", s3.Len())
 	}
 
-	// Higher degree (t=5) still maintains sorted invariant.
-	s4 := NewBTreeSet[int](WithMinDegree(5))
+	s4 := NewBTreeSet(comparator.Natural[int](), WithMinDegree(5))
 	const N = 300
 	for i := N - 1; i >= 0; i-- {
 		s4.Add(i)
@@ -200,11 +195,47 @@ func TestBTreeSet_WithMinDegree(t *testing.T) {
 	}
 }
 
-// ---------- Benchmarks ----------
+type person struct {
+	Name string
+	Age  int
+}
+
+func TestBTreeSet_StructByField(t *testing.T) {
+	s := NewBTreeSet(comparator.ByField(func(p person) int { return p.Age }))
+
+	s.Add(person{Name: "Alice", Age: 30})
+	s.Add(person{Name: "Bob", Age: 25})
+	s.Add(person{Name: "Charlie", Age: 35})
+
+	elements := s.Elements()
+	if elements[0].Age != 25 || elements[1].Age != 30 || elements[2].Age != 35 {
+		t.Fatalf("Elements not sorted by age: %v", elements)
+	}
+}
+
+func TestBTreeSet_StructMultiCriterion(t *testing.T) {
+	byAge := comparator.ByField(func(p person) int { return p.Age })
+	byName := comparator.ByField(func(p person) string { return p.Name })
+	cmp := byAge.Then(byName)
+
+	s := NewBTreeSet(cmp)
+
+	s.Add(person{Name: "Charlie", Age: 30})
+	s.Add(person{Name: "Alice", Age: 30})
+	s.Add(person{Name: "Bob", Age: 25})
+
+	elements := s.Elements()
+	if elements[0].Name != "Bob" {
+		t.Fatalf("first should be Bob (age 25), got %v", elements[0])
+	}
+	if elements[1].Name != "Alice" || elements[2].Name != "Charlie" {
+		t.Fatalf("ages 30 should be ordered by name: Alice then Charlie; got %v, %v", elements[1], elements[2])
+	}
+}
 
 func BenchmarkBTreeSet_Add(b *testing.B) {
 	b.ReportAllocs()
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	i := 0
 	for b.Loop() {
 		s.Add(i)
@@ -214,7 +245,7 @@ func BenchmarkBTreeSet_Add(b *testing.B) {
 
 func BenchmarkBTreeSet_Contains(b *testing.B) {
 	const N = 10_000
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	for i := 0; i < N; i++ {
 		s.Add(i)
 	}
@@ -229,7 +260,7 @@ func BenchmarkBTreeSet_Contains(b *testing.B) {
 
 func BenchmarkBTreeSet_Range(b *testing.B) {
 	const N = 10_000
-	s := NewBTreeSet[int]()
+	s := NewBTreeSet(comparator.Natural[int]())
 	for i := 0; i < N; i++ {
 		s.Add(i)
 	}

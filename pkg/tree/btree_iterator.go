@@ -1,9 +1,7 @@
 package tree
 
-import "cmp"
-
 // BTreeIterator iterates over keys in ascending order.
-type BTreeIterator[K cmp.Ordered] struct {
+type BTreeIterator[K any] struct {
 	tree     *btree[K]
 	node     *bnode[K]
 	idx      int
@@ -12,7 +10,7 @@ type BTreeIterator[K cmp.Ordered] struct {
 }
 
 // newBTreeIterator creates an iterator positioned on the smallest element.
-func newBTreeIterator[K cmp.Ordered](tree *btree[K]) *BTreeIterator[K] {
+func newBTreeIterator[K any](tree *btree[K]) *BTreeIterator[K] {
 	it := &BTreeIterator[K]{tree: tree}
 	if tree.size == 0 {
 		it.finished = true
@@ -29,7 +27,7 @@ func newBTreeIterator[K cmp.Ordered](tree *btree[K]) *BTreeIterator[K] {
 }
 
 // newBTreeIteratorFromKey creates an iterator positioned on the first element >= key.
-func newBTreeIteratorFromKey[K cmp.Ordered](tree *btree[K], key K) *BTreeIterator[K] {
+func newBTreeIteratorFromKey[K any](tree *btree[K], key K) *BTreeIterator[K] {
 	it := &BTreeIterator[K]{tree: tree}
 	if tree.size == 0 {
 		it.finished = true
@@ -38,10 +36,10 @@ func newBTreeIteratorFromKey[K cmp.Ordered](tree *btree[K], key K) *BTreeIterato
 	node := tree.root
 	for {
 		i := 0
-		for i < len(node.keys) && key > node.keys[i] {
+		for i < len(node.keys) && tree.less(node.keys[i], key) {
 			i++
 		}
-		if i < len(node.keys) && node.keys[i] >= key {
+		if i < len(node.keys) && !tree.less(node.keys[i], key) {
 			// We may still find a smaller-but-valid key in the left subtree;
 			// descend to the leaf while preserving the position.
 			if node.isLeaf {
@@ -119,9 +117,6 @@ func (it *BTreeIterator[K]) Next() (K, bool) {
 	return val, true
 }
 
-// Prev would mirror Next descending leftward; it is intentionally omitted.
-// Range queries are exposed through Range below, which returns a slice.
-
 // Range returns a slice with all keys in the closed interval [low, high].
 func (t *btree[K]) Range(low, high K) []K {
 	result := []K{}
@@ -134,10 +129,10 @@ func (t *btree[K]) rangeTraverse(x *bnode[K], low, high K, result *[]K) {
 		return
 	}
 	i := 0
-	for i < len(x.keys) && x.keys[i] < low {
+	for i < len(x.keys) && t.less(x.keys[i], low) {
 		i++
 	}
-	for i < len(x.keys) && x.keys[i] <= high {
+	for i < len(x.keys) && !t.less(high, x.keys[i]) {
 		if !x.isLeaf {
 			t.rangeTraverse(x.children[i], low, high, result)
 		}

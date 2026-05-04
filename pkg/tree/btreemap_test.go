@@ -3,12 +3,14 @@ package tree
 import (
 	"slices"
 	"testing"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 func TestBTreeMap_PutGetRemove(t *testing.T) {
 	t.Parallel()
 
-	m := NewBTreeMap[string, int]()
+	m := NewBTreeMap[string, int](comparator.Natural[string]())
 	if got, _ := m.Get("missing"); got != 0 {
 		t.Fatalf("Get on empty should return zero value, got %d", got)
 	}
@@ -42,7 +44,7 @@ func TestBTreeMap_PutGetRemove(t *testing.T) {
 func TestBTreeMap_KeysValuesSorted(t *testing.T) {
 	t.Parallel()
 
-	m := NewBTreeMap[int, string]()
+	m := NewBTreeMap[int, string](comparator.Natural[int]())
 	pairs := []KeyValuePair[int, string]{
 		{3, "three"}, {1, "one"}, {4, "four"}, {1, "one-dup"}, {5, "five"}, {9, "nine"}, {2, "two"}, {6, "six"},
 	}
@@ -75,7 +77,7 @@ func TestBTreeMap_KeysValuesSorted(t *testing.T) {
 func TestBTreeMap_MinMaxRange(t *testing.T) {
 	t.Parallel()
 
-	m := NewBTreeMap[int, string]()
+	m := NewBTreeMap[int, string](comparator.Natural[int]())
 	for _, k := range []int{10, 20, 5, 15, 25, 30, 8} {
 		m.Put(k, "v")
 	}
@@ -95,7 +97,7 @@ func TestBTreeMap_MinMaxRange(t *testing.T) {
 		t.Fatalf("Range keys=%v want %v", gotKeys, want)
 	}
 
-	empty := NewBTreeMap[int, string]()
+	empty := NewBTreeMap[int, string](comparator.Natural[int]())
 	if _, _, ok := empty.Min(); ok {
 		t.Fatalf("Min on empty should be false")
 	}
@@ -107,9 +109,8 @@ func TestBTreeMap_MinMaxRange(t *testing.T) {
 func TestBTreeMap_WithMinDegree(t *testing.T) {
 	t.Parallel()
 
-	// Default degree and WithMinDegree(2) must produce identical key order.
-	m1 := NewBTreeMap[int, string]()
-	m2 := NewBTreeMap[int, string](WithMinDegree(2))
+	m1 := NewBTreeMap[int, string](comparator.Natural[int]())
+	m2 := NewBTreeMap[int, string](comparator.Natural[int](), WithMinDegree(2))
 	for i := 0; i < 50; i++ {
 		m1.Put(i, "v")
 		m2.Put(i, "v")
@@ -118,8 +119,7 @@ func TestBTreeMap_WithMinDegree(t *testing.T) {
 		t.Fatal("default degree and WithMinDegree(2) should produce identical key order")
 	}
 
-	// Values below 2 are ignored; map falls back to default.
-	m3 := NewBTreeMap[int, string](WithMinDegree(1))
+	m3 := NewBTreeMap[int, string](comparator.Natural[int](), WithMinDegree(1))
 	for i := 0; i < 30; i++ {
 		m3.Put(i, "x")
 	}
@@ -127,8 +127,7 @@ func TestBTreeMap_WithMinDegree(t *testing.T) {
 		t.Fatalf("len=%d want 30", m3.Len())
 	}
 
-	// Higher degree (t=4) still maintains sorted key invariant.
-	m4 := NewBTreeMap[int, int](WithMinDegree(4))
+	m4 := NewBTreeMap[int, int](comparator.Natural[int](), WithMinDegree(4))
 	const N = 200
 	for i := N - 1; i >= 0; i-- {
 		m4.Put(i, i*2)
@@ -141,11 +140,56 @@ func TestBTreeMap_WithMinDegree(t *testing.T) {
 	}
 }
 
-// ---------- Benchmarks ----------
+type item struct {
+	ID   int
+	Name string
+}
+
+func TestBTreeMap_StructKeyByField(t *testing.T) {
+	byID := comparator.ByField(func(i item) int { return i.ID })
+	m := NewBTreeMap[item, string](byID)
+
+	m.Put(item{ID: 3, Name: "C"}, "third")
+	m.Put(item{ID: 1, Name: "A"}, "first")
+	m.Put(item{ID: 2, Name: "B"}, "second")
+
+	keys := m.Keys()
+	if keys[0].ID != 1 || keys[1].ID != 2 || keys[2].ID != 3 {
+		t.Fatalf("Keys not sorted by ID: %v", keys)
+	}
+
+	v, ok := m.Get(item{ID: 1})
+	if !ok || v != "first" {
+		t.Fatalf("Get({1})=%q,%v want first,true", v, ok)
+	}
+}
+
+func TestBTreeMap_StructKeyMultiCriterion(t *testing.T) {
+	byName := comparator.ByField(func(i item) string { return i.Name })
+	byID := comparator.ByField(func(i item) int { return i.ID })
+	cmp := byName.Then(byID)
+
+	m := NewBTreeMap[item, string](cmp)
+
+	m.Put(item{ID: 2, Name: "Alice"}, "a2")
+	m.Put(item{ID: 1, Name: "Alice"}, "a1")
+	m.Put(item{ID: 3, Name: "Bob"}, "b3")
+
+	keys := m.Keys()
+	if keys[0].Name != "Alice" || keys[0].ID != 1 {
+		t.Fatalf("first should be Alice/1, got %v", keys[0])
+	}
+	if keys[1].Name != "Alice" || keys[1].ID != 2 {
+		t.Fatalf("second should be Alice/2, got %v", keys[1])
+	}
+	if keys[2].Name != "Bob" || keys[2].ID != 3 {
+		t.Fatalf("third should be Bob/3, got %v", keys[2])
+	}
+}
 
 func BenchmarkBTreeMap_Put(b *testing.B) {
 	b.ReportAllocs()
-	m := NewBTreeMap[int, int]()
+	m := NewBTreeMap[int, int](comparator.Natural[int]())
 	i := 0
 	for b.Loop() {
 		m.Put(i, i)
@@ -155,7 +199,7 @@ func BenchmarkBTreeMap_Put(b *testing.B) {
 
 func BenchmarkBTreeMap_Get(b *testing.B) {
 	const N = 10_000
-	m := NewBTreeMap[int, int]()
+	m := NewBTreeMap[int, int](comparator.Natural[int]())
 	for i := 0; i < N; i++ {
 		m.Put(i, i)
 	}

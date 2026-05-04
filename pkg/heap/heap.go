@@ -1,16 +1,17 @@
 package heap
 
 import (
-	"cmp"
 	"container/heap"
 	"errors"
 	"sync"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 // internalHeap implements heap.Interface.
-type internalHeap[T cmp.Ordered] struct {
+type internalHeap[T any] struct {
 	data []T
-	less func(a, b T) bool
+	less comparator.Comparator[T]
 }
 
 func (h *internalHeap[T]) Len() int           { return len(h.data) }
@@ -28,14 +29,15 @@ func (h *internalHeap[T]) Pop() any {
 }
 
 // Heap represents a generic Priority Queue.
-type Heap[T cmp.Ordered] struct {
+type Heap[T any] struct {
 	data *internalHeap[T]
 }
 
-// New cria um Heap. Padrão: Min-Heap.
-func New[T cmp.Ordered](opts ...HeapOption[T]) *Heap[T] {
+// New creates a Heap ordered by the provided Comparator.
+// The comparator is mandatory — there is no default ordering.
+func New[T any](cmp comparator.Comparator[T], opts ...HeapOption[T]) *Heap[T] {
 	h := &internalHeap[T]{
-		less: func(a, b T) bool { return a < b }, // padrão Min-Heap
+		less: cmp,
 	}
 	for _, o := range opts {
 		o(h)
@@ -67,14 +69,15 @@ func (h *Heap[T]) Peek() (T, error) {
 func (h *Heap[T]) Len() int      { return h.data.Len() }
 func (h *Heap[T]) IsEmpty() bool { return h.data.Len() == 0 }
 
-// SyncHeap é uma Heap thread-safe.
-type SyncHeap[T cmp.Ordered] struct {
+// SyncHeap is a thread-safe Heap.
+type SyncHeap[T any] struct {
 	mu sync.RWMutex
 	h  *Heap[T]
 }
 
-func NewSync[T cmp.Ordered](opts ...HeapOption[T]) *SyncHeap[T] {
-	return &SyncHeap[T]{h: New[T](opts...)}
+// NewSync creates a thread-safe Heap ordered by the provided Comparator.
+func NewSync[T any](cmp comparator.Comparator[T], opts ...HeapOption[T]) *SyncHeap[T] {
+	return &SyncHeap[T]{h: New[T](cmp, opts...)}
 }
 
 func (sh *SyncHeap[T]) Push(v T) {

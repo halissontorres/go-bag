@@ -1,24 +1,13 @@
 package heap
 
-import "cmp"
+import "github.com/halissontorres/go-bag/pkg/comparator"
 
-// HeapOption configura um Heap na criação.
-type HeapOption[T cmp.Ordered] func(*internalHeap[T])
+// HeapOption configures a Heap at creation time.
+type HeapOption[T any] func(*internalHeap[T])
 
-func WithMinHeap[T cmp.Ordered]() HeapOption[T] {
+// WithComparator overrides the comparator set at construction time.
+func WithComparator[T any](cmp comparator.Comparator[T]) HeapOption[T] {
 	return func(h *internalHeap[T]) {
-		h.less = func(a, b T) bool { return a < b }
-	}
-}
-
-func WithMaxHeap[T cmp.Ordered]() HeapOption[T] {
-	return func(h *internalHeap[T]) {
-		h.less = func(a, b T) bool { return a > b }
-	}
-}
-
-func WithLessFunc[T cmp.Ordered](less func(a, b T) bool) HeapOption[T] {
-	return func(h *internalHeap[T]) {
-		h.less = less
+		h.less = cmp
 	}
 }

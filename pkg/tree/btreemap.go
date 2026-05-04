@@ -1,9 +1,9 @@
 package tree
 
-import "cmp"
+import "github.com/halissontorres/go-bag/pkg/comparator"
 
 // BTreeMap is a key-ordered map backed by a B-Tree.
-type BTreeMap[K cmp.Ordered, V any] struct {
+type BTreeMap[K comparable, V any] struct {
 	tree *btree[K]
 	vals map[K]V
 }
@@ -14,36 +14,41 @@ type KeyValuePair[K any, V any] struct {
 	Value V
 }
 
-func NewBTreeMap[K cmp.Ordered, V any](opts ...Option) *BTreeMap[K, V] {
+// NewBTreeMap creates a BTreeMap ordered by the provided Comparator.
+func NewBTreeMap[K comparable, V any](cmp comparator.Comparator[K], opts ...Option) *BTreeMap[K, V] {
 	c := applyTreeOptions(opts)
 	return &BTreeMap[K, V]{
-		tree: newBTree[K](c.minDegree),
+		tree: newBTree[K](c.minDegree, cmp),
 		vals: make(map[K]V),
 	}
 }
 
 func (m *BTreeMap[K, V]) Put(key K, value V) {
-	if m.tree.insert(key) {
-		m.vals[key] = value
-	} else {
-		m.vals[key] = value
+	if node, idx := m.tree.search(key); node != nil {
+		oldKey := node.keys[idx]
+		m.tree.delete(oldKey)
+		delete(m.vals, oldKey)
 	}
+	m.tree.insert(key)
+	m.vals[key] = value
 }
 
 func (m *BTreeMap[K, V]) Get(key K) (V, bool) {
-	if node, _ := m.tree.search(key); node != nil {
-		return m.vals[key], true
+	if node, idx := m.tree.search(key); node != nil {
+		return m.vals[node.keys[idx]], true
 	}
 	var zero V
 	return zero, false
 }
 
 func (m *BTreeMap[K, V]) Remove(key K) bool {
-	if !m.Contains(key) {
+	node, idx := m.tree.search(key)
+	if node == nil {
 		return false
 	}
-	delete(m.vals, key)
-	return m.tree.delete(key)
+	actualKey := node.keys[idx]
+	delete(m.vals, actualKey)
+	return m.tree.delete(actualKey)
 }
 
 func (m *BTreeMap[K, V]) Contains(key K) bool {

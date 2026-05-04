@@ -4,6 +4,8 @@ import (
 	"math/rand"
 	"reflect"
 	"testing"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 func TestFromChannel(t *testing.T) {
@@ -120,7 +122,7 @@ func TestDistinct(t *testing.T) {
 func TestSorted(t *testing.T) {
 	input := []int{3, 1, 4, 1, 5, 9, 2}
 	s := FromSlice(input)
-	result := Sorted(s).ToSlice()
+	result := SortedBy(s, comparator.Natural[int]()).ToSlice()
 
 	expected := []int{1, 1, 2, 3, 4, 5, 9}
 	if !reflect.DeepEqual(expected, result) {
@@ -323,7 +325,7 @@ func BenchmarkSorted(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := FromSlice(input)
-		result := Sorted(s).ToSlice()
+		result := SortedBy(s, comparator.Natural[int]()).ToSlice()
 		_ = result
 	}
 }
@@ -387,7 +389,7 @@ func BenchmarkSortedAlreadySorted(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := FromSlice(input)
-		_ = Sorted(s).ToSlice()
+		_ = SortedBy(s, comparator.Natural[int]()).ToSlice()
 	}
 }
 
@@ -426,7 +428,7 @@ func TestDistinct_WithInitialCap(t *testing.T) {
 
 func TestSorted_WithInitialCap(t *testing.T) {
 	input := []int{3, 1, 4, 1, 5, 9, 2}
-	result := Sorted(FromSlice(input), WithInitialCap(len(input))).ToSlice()
+	result := SortedBy(FromSlice(input), comparator.Natural[int](), WithInitialCap(len(input))).ToSlice()
 	expected := []int{1, 1, 2, 3, 4, 5, 9}
 	if !reflect.DeepEqual(expected, result) {
 		t.Errorf("Expected %v, got %v", expected, result)
@@ -435,7 +437,7 @@ func TestSorted_WithInitialCap(t *testing.T) {
 
 func TestSorted_WithInitialCap_Zero_Ignored(t *testing.T) {
 	input := []int{5, 3, 1}
-	result := Sorted(FromSlice(input), WithInitialCap(0)).ToSlice()
+	result := SortedBy(FromSlice(input), comparator.Natural[int](), WithInitialCap(0)).ToSlice()
 	expected := []int{1, 3, 5}
 	if !reflect.DeepEqual(expected, result) {
 		t.Errorf("Expected %v, got %v", expected, result)
@@ -462,7 +464,7 @@ func BenchmarkSortedLarge(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := FromSlice(input)
-		_ = Sorted(s).ToSlice()
+		_ = SortedBy(s, comparator.Natural[int]()).ToSlice()
 	}
 }
 
@@ -549,14 +551,88 @@ func BenchmarkSorted_InitialCap(b *testing.B) {
 	b.Run("DefaultCap", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = Sorted(FromSlice(input)).ToSlice()
+			_ = SortedBy(FromSlice(input), comparator.Natural[int]()).ToSlice()
 		}
 	})
 
 	b.Run("WithInitialCap", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = Sorted(FromSlice(input), WithInitialCap(N)).ToSlice()
+			_ = SortedBy(FromSlice(input), comparator.Natural[int](), WithInitialCap(N)).ToSlice()
+		}
+	})
+}
+
+type task struct {
+	name     string
+	priority int
+}
+
+func TestSortedBy_StructByField(t *testing.T) {
+	tasks := []task{
+		{name: "low", priority: 50},
+		{name: "critical", priority: 1},
+		{name: "medium", priority: 30},
+	}
+	result := SortedBy(FromSlice(tasks), comparator.ByField(func(t task) int { return t.priority })).ToSlice()
+
+	if result[0].priority != 1 || result[1].priority != 30 || result[2].priority != 50 {
+		t.Errorf("tasks not sorted by priority: %v", result)
+	}
+}
+
+func TestSortedBy_StructMultiCriterion(t *testing.T) {
+	tasks := []task{
+		{name: "B", priority: 1},
+		{name: "A", priority: 1},
+		{name: "C", priority: 0},
+	}
+	byPriority := comparator.ByField(func(t task) int { return t.priority })
+	byName := comparator.ByField(func(t task) string { return t.name })
+	cmp := byPriority.Then(byName)
+
+	result := SortedBy(FromSlice(tasks), cmp).ToSlice()
+
+	if result[0].name != "C" || result[1].name != "A" || result[2].name != "B" {
+		t.Errorf("tasks not sorted by priority then name: %v", result)
+	}
+}
+
+func TestDistinctBy(t *testing.T) {
+	tasks := []task{
+		{name: "A", priority: 10},
+		{name: "B", priority: 10},
+		{name: "C", priority: 20},
+		{name: "D", priority: 10},
+	}
+	result := DistinctBy(FromSlice(tasks), comparator.ByField(func(t task) int { return t.priority })).ToSlice()
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 distinct elements, got %d: %v", len(result), result)
+	}
+	if result[0].name != "A" || result[1].name != "C" {
+		t.Errorf("unexpected distinct result: %v", result)
+	}
+}
+
+func BenchmarkSortedBy_InitialCap(b *testing.B) {
+	const N = 10000
+	input := make([]int, N)
+	for i := range input {
+		input[i] = rand.Intn(N)
+	}
+
+	b.Run("DefaultCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = SortedBy(FromSlice(input), comparator.Natural[int]()).ToSlice()
+		}
+	})
+
+	b.Run("WithInitialCap", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			_ = SortedBy(FromSlice(input), comparator.Natural[int](), WithInitialCap(N)).ToSlice()
 		}
 	})
 }

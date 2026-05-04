@@ -1,8 +1,9 @@
 package stream
 
 import (
-	"cmp"
 	"slices"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 // Filter returns a Stream containing only elements that satisfy the predicate.
@@ -76,13 +77,48 @@ func Distinct[T comparable](s *Stream[T], opts ...Option) *Stream[T] {
 	})
 }
 
-// Sorted collects all elements, sorts them, and emits them in order.
-// Accepts an optional WithInitialCap passed through to ToSlice.
-// Requires cmp.Ordered.
-func Sorted[T cmp.Ordered](s *Stream[T], opts ...Option) *Stream[T] {
+// SortedBy collects all elements, sorts them using the provided Comparator,
+// and emits them in order. Works with any type T.
+func SortedBy[T any](s *Stream[T], less comparator.Comparator[T], opts ...Option) *Stream[T] {
 	collected := s.ToSlice(opts...)
-	slices.Sort(collected)
+	slices.SortFunc(collected, func(a, b T) int {
+		if less(a, b) {
+			return -1
+		}
+		if less(b, a) {
+			return 1
+		}
+		return 0
+	})
 	return FromSlice(collected)
+}
+
+// DistinctBy eliminates duplicates using the Comparator for equality.
+// Two elements are considered equal when neither less(a,b) nor less(b,a) is true.
+// Use when T is not comparable or when equality is defined by ordering.
+func DistinctBy[T any](s *Stream[T], less comparator.Comparator[T], opts ...Option) *Stream[T] {
+	c := applyStreamOptions(opts)
+	seen := make([]T, 0, c.initialCap)
+	return NewStream(func() (T, bool) {
+		for {
+			val, ok := s.next()
+			if !ok {
+				var zero T
+				return zero, false
+			}
+			found := false
+			for _, v := range seen {
+				if !less(val, v) && !less(v, val) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				seen = append(seen, val)
+				return val, true
+			}
+		}
+	})
 }
 
 // Limit limits the number of elements emitted.

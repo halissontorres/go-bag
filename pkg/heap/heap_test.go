@@ -4,10 +4,12 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+
+	"github.com/halissontorres/go-bag/pkg/comparator"
 )
 
 func TestHeap_Int_MinHeapBehavior(t *testing.T) {
-	h := New[int]() // padrão: Min-Heap
+	h := New(comparator.Natural[int]())
 
 	if h.Len() != 0 {
 		t.Errorf("expected Len 0, got %d", h.Len())
@@ -44,14 +46,13 @@ func TestHeap_Int_MinHeapBehavior(t *testing.T) {
 }
 
 func TestHeap_String_Ordering(t *testing.T) {
-	h := New[string]()
+	h := New(comparator.Natural[string]())
 
 	h.Push("Zebra")
 	h.Push("Abacaxi")
 	h.Push("Maçã")
 	h.Push("Banana")
 
-	// The smallest element (alphabetical order) should be "Abacaxi"
 	val, err := h.Pop()
 	if err != nil {
 		t.Fatalf("unexpected error in Pop: %v", err)
@@ -60,7 +61,6 @@ func TestHeap_String_Ordering(t *testing.T) {
 		t.Errorf("expected 'Abacaxi', got '%s'", val)
 	}
 
-	// The next one should be "Banana"
 	val, _ = h.Pop()
 	if val != "Banana" {
 		t.Errorf("expected 'Banana', got '%s'", val)
@@ -68,15 +68,13 @@ func TestHeap_String_Ordering(t *testing.T) {
 }
 
 func TestHeap_EmptyErrors(t *testing.T) {
-	h := New[float64]()
+	h := New(comparator.Natural[float64]())
 
-	// Test Peek on empty Heap
 	_, err := h.Peek()
 	if err == nil {
 		t.Error("expected error when Peek on empty heap, but none occurred")
 	}
 
-	// Test Pop on empty Heap
 	_, err = h.Pop()
 	if err == nil {
 		t.Error("expected error when Pop on empty heap, but none occurred")
@@ -84,7 +82,7 @@ func TestHeap_EmptyErrors(t *testing.T) {
 }
 
 func TestSyncHeap_EmptyErrors(t *testing.T) {
-	h := NewSync[float64]()
+	h := NewSync(comparator.Natural[float64]())
 
 	_, err := h.Peek()
 	if err == nil {
@@ -101,10 +99,9 @@ func TestSyncHeap_ConcurrentPushPop(t *testing.T) {
 	const goroutines = 10
 	const itemsEach = 100
 
-	h := NewSync[int]()
+	h := NewSync(comparator.Natural[int]())
 	var wg sync.WaitGroup
 
-	// Concurrent pushes
 	wg.Add(goroutines)
 	for g := 0; g < goroutines; g++ {
 		go func(base int) {
@@ -120,7 +117,6 @@ func TestSyncHeap_ConcurrentPushPop(t *testing.T) {
 		t.Errorf("expected %d elements, got %d", goroutines*itemsEach, h.Len())
 	}
 
-	// Concurrent pops
 	results := make(chan int, goroutines*itemsEach)
 	wg.Add(goroutines)
 	for g := 0; g < goroutines; g++ {
@@ -153,7 +149,7 @@ func TestSyncHeap_ConcurrentPushPop(t *testing.T) {
 }
 
 func TestSyncHeap_ConcurrentPeek(t *testing.T) {
-	h := NewSync[int]()
+	h := NewSync(comparator.Natural[int]())
 	for i := 100; i >= 1; i-- {
 		h.Push(i)
 	}
@@ -176,53 +172,8 @@ func TestSyncHeap_ConcurrentPeek(t *testing.T) {
 	wg.Wait()
 }
 
-// BenchmarkPush_Sequential tests the worst case/best case depending on Min/Max heap,
-// since numbers are already inserted in order.
-func BenchmarkHeap_PushSequential(b *testing.B) {
-	h := New[int]()
-	b.ResetTimer() // Reset timer to ignore the initialization above
-
-	for i := 0; i < b.N; i++ {
-		h.Push(i)
-	}
-}
-
-// BenchmarkPush_Random tests the most realistic scenario, inserting completely
-// random values, forcing up-heap at various tree levels.
-func BenchmarkHeap_PushRandom(b *testing.B) {
-	// Pre-generate numbers to ignore rand time in the benchmark
-	nums := make([]int, b.N)
-	for i := 0; i < b.N; i++ {
-		nums[i] = rand.Intn(1000000)
-	}
-
-	h := New[int]()
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
-		h.Push(nums[i])
-	}
-}
-
-// BenchmarkPop measures removal time. As Pop requires the Heap
-// to have elements, we fill it before starting the timer.
-func BenchmarkHeap_Pop(b *testing.B) {
-	h := New[int]()
-
-	// Setup: fill the Heap with b.N elements
-	for i := 0; i < b.N; i++ {
-		h.Push(rand.Intn(1000000))
-	}
-
-	b.ResetTimer() // Start measuring real time only for Pop
-
-	for i := 0; i < b.N; i++ {
-		_, _ = h.Pop()
-	}
-}
-
-func TestHeap_Int_MaxHeapBehavior(t *testing.T) {
-	h := New[int](WithMaxHeap[int]())
+func TestHeap_MaxHeapBehavior(t *testing.T) {
+	h := New(comparator.Reverse[int]())
 
 	h.Push(50)
 	h.Push(10)
@@ -250,16 +201,15 @@ func TestHeap_Int_MaxHeapBehavior(t *testing.T) {
 	}
 }
 
-func TestHeap_WithLessFunc(t *testing.T) {
-	// ordena pelo último dígito
-	h := New[int](WithLessFunc(func(a, b int) bool {
+func TestHeap_CustomComparator(t *testing.T) {
+	h := New(comparator.Comparator[int](func(a, b int) bool {
 		return a%10 < b%10
 	}))
 
-	h.Push(21) // último dígito: 1
-	h.Push(35) // último dígito: 5
-	h.Push(43) // último dígito: 3
-	h.Push(59) // último dígito: 9
+	h.Push(21) // last digit: 1
+	h.Push(35) // last digit: 5
+	h.Push(43) // last digit: 3
+	h.Push(59) // last digit: 9
 
 	first, err := h.Peek()
 	if err != nil {
@@ -279,27 +229,92 @@ func TestHeap_WithLessFunc(t *testing.T) {
 	}
 }
 
-func TestHeap_WithMinHeap_Explicit(t *testing.T) {
-	// WithMinHeap explícito deve se comportar igual ao padrão
-	h := New[int](WithMinHeap[int]())
+type task struct {
+	name     string
+	priority int
+}
 
-	h.Push(20)
-	h.Push(3)
-	h.Push(15)
+func TestHeap_StructByField(t *testing.T) {
+	h := New(comparator.ByField(func(t task) int { return t.priority }))
 
-	val, err := h.Pop()
+	h.Push(task{name: "low", priority: 50})
+	h.Push(task{name: "critical", priority: 1})
+	h.Push(task{name: "medium", priority: 30})
+
+	first, err := h.Pop()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if val != 3 {
-		t.Errorf("expected 3, got %d", val)
+	if first.priority != 1 || first.name != "critical" {
+		t.Errorf("expected {critical 1}, got {%s %d}", first.name, first.priority)
+	}
+
+	second, _ := h.Pop()
+	if second.priority != 30 {
+		t.Errorf("expected priority 30, got %d", second.priority)
+	}
+
+	third, _ := h.Pop()
+	if third.priority != 50 {
+		t.Errorf("expected priority 50, got %d", third.priority)
 	}
 }
 
-// --- Testes existentes sem alteração ---
+func TestHeap_StructMultiCriterion(t *testing.T) {
+	byPriority := comparator.ByField(func(t task) int { return t.priority })
+	byName := comparator.ByField(func(t task) string { return t.name })
+	cmp := byPriority.Then(byName)
+
+	h := New(cmp)
+
+	h.Push(task{name: "B", priority: 1})
+	h.Push(task{name: "A", priority: 1})
+	h.Push(task{name: "C", priority: 0})
+
+	first, _ := h.Pop()
+	if first.priority != 0 || first.name != "C" {
+		t.Errorf("expected {C 0}, got {%s %d}", first.name, first.priority)
+	}
+
+	second, _ := h.Pop()
+	if second.priority != 1 || second.name != "A" {
+		t.Errorf("expected {A 1}, got {%s %d}", second.name, second.priority)
+	}
+
+	third, _ := h.Pop()
+	if third.priority != 1 || third.name != "B" {
+		t.Errorf("expected {B 1}, got {%s %d}", third.name, third.priority)
+	}
+}
+
+func TestSyncHeap_Reverse(t *testing.T) {
+	h := NewSync(comparator.Reverse[int]())
+
+	h.Push(10)
+	h.Push(50)
+	h.Push(30)
+
+	first, err := h.Pop()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if first != 50 {
+		t.Errorf("expected 50, got %d", first)
+	}
+
+	second, _ := h.Pop()
+	if second != 30 {
+		t.Errorf("expected 30, got %d", second)
+	}
+
+	third, _ := h.Pop()
+	if third != 10 {
+		t.Errorf("expected 10, got %d", third)
+	}
+}
 
 func TestSyncHeap_MinHeapBehavior(t *testing.T) {
-	h := NewSync[int]()
+	h := NewSync(comparator.Natural[int]())
 
 	if !h.IsEmpty() {
 		t.Fatal("expected empty heap")
@@ -342,7 +357,7 @@ func TestSyncHeap_MinHeapBehavior(t *testing.T) {
 }
 
 func TestSyncHeap_MaxHeapBehavior(t *testing.T) {
-	h := NewSync[int](WithMaxHeap[int]())
+	h := NewSync(comparator.Reverse[int]())
 
 	h.Push(50)
 	h.Push(10)
@@ -369,10 +384,46 @@ func TestSyncHeap_MaxHeapBehavior(t *testing.T) {
 	}
 }
 
-// Benchmark comparativo Min vs Max para evidenciar que o custo é idêntico
+func BenchmarkHeap_PushSequential(b *testing.B) {
+	h := New(comparator.Natural[int]())
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		h.Push(i)
+	}
+}
+
+func BenchmarkHeap_PushRandom(b *testing.B) {
+	nums := make([]int, b.N)
+	for i := 0; i < b.N; i++ {
+		nums[i] = rand.Intn(1000000)
+	}
+
+	h := New(comparator.Natural[int]())
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		h.Push(nums[i])
+	}
+}
+
+func BenchmarkHeap_Pop(b *testing.B) {
+	h := New(comparator.Natural[int]())
+
+	for i := 0; i < b.N; i++ {
+		h.Push(rand.Intn(1000000))
+	}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		_, _ = h.Pop()
+	}
+}
+
 func BenchmarkHeap_MinVsMax(b *testing.B) {
 	b.Run("MinHeap", func(b *testing.B) {
-		h := New[int](WithMinHeap[int]())
+		h := New(comparator.Natural[int]())
 		for i := 0; i < b.N; i++ {
 			h.Push(rand.Intn(1000000))
 		}
@@ -383,7 +434,7 @@ func BenchmarkHeap_MinVsMax(b *testing.B) {
 	})
 
 	b.Run("MaxHeap", func(b *testing.B) {
-		h := New[int](WithMaxHeap[int]())
+		h := New(comparator.Reverse[int]())
 		for i := 0; i < b.N; i++ {
 			h.Push(rand.Intn(1000000))
 		}
