@@ -1,16 +1,16 @@
 package tree
 
-import "cmp"
+import "github.com/halissontorres/go-bag/pkg/comparator"
 
 // BTreeSet is an ordered set backed by a B-Tree.
-// Elements must satisfy the Ordered constraint (i.e. support <).
-type BTreeSet[T cmp.Ordered] struct {
+type BTreeSet[T any] struct {
 	tree *btree[T]
 }
 
-func NewBTreeSet[T cmp.Ordered](opts ...Option) *BTreeSet[T] {
+// NewBTreeSet creates a BTreeSet ordered by the provided Comparator.
+func NewBTreeSet[T any](cmp comparator.Comparator[T], opts ...Option) *BTreeSet[T] {
 	c := applyTreeOptions(opts)
-	return &BTreeSet[T]{tree: newBTree[T](c.minDegree)}
+	return &BTreeSet[T]{tree: newBTree[T](c.minDegree, cmp)}
 }
 
 func (s *BTreeSet[T]) Add(value T) bool {
@@ -23,7 +23,6 @@ func (s *BTreeSet[T]) Contains(value T) bool {
 }
 
 func (s *BTreeSet[T]) Remove(value T) bool {
-	// Simple implementation: rebuild the tree without the value.
 	if !s.Contains(value) {
 		return false
 	}
@@ -31,7 +30,7 @@ func (s *BTreeSet[T]) Remove(value T) bool {
 	s.Clear()
 	removed := false
 	for _, item := range items {
-		if item == value && !removed {
+		if !s.tree.less(item, value) && !s.tree.less(value, item) && !removed {
 			removed = true
 			continue
 		}
@@ -42,7 +41,7 @@ func (s *BTreeSet[T]) Remove(value T) bool {
 
 func (s *BTreeSet[T]) Len() int          { return s.tree.Len() }
 func (s *BTreeSet[T]) IsEmpty() bool     { return s.Len() == 0 }
-func (s *BTreeSet[T]) Clear()            { s.tree = newBTree[T](s.tree.minDegree) }
+func (s *BTreeSet[T]) Clear()            { s.tree = newBTree[T](s.tree.minDegree, s.tree.less) }
 func (s *BTreeSet[T]) ForEach(f func(T)) { s.tree.traverse(f) }
 func (s *BTreeSet[T]) Elements() []T {
 	var result []T

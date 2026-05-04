@@ -22,9 +22,9 @@ Every collection ships in two flavors: a fast, single-threaded core type and a `
 
 ## Features
 
-- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable`/`Ordered` as appropriate.
+- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable` as appropriate, with custom ordering via `comparator.Comparator`.
 - **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, and `SyncSet` types for safe access from multiple goroutines.
-- **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `Sorted`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
+- **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `DistinctBy`, `SortedBy`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
 - **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
 - **Ordered trees.** B-Tree-backed `BTreeSet` and `BTreeMap` with sorted iteration, in-order range queries, min/max lookup, and a forward iterator.
@@ -106,7 +106,10 @@ fmt.Println(sl.String()) // [42]
 ### Stream
 
 ```go
-import "github.com/halissontorres/go-bag/pkg/stream"
+import (
+    "github.com/halissontorres/go-bag/pkg/comparator"
+    "github.com/halissontorres/go-bag/pkg/stream"
+)
 
 // Build a pipeline: double every number, keep only those > 10, take the first 3.
 result := stream.Limit(
@@ -133,8 +136,9 @@ close(ch)
 words := stream.FromChannel(ch).ToSlice() // ["a" "b" "c"]
 
 // Deduplicate and sort
-unique := stream.Sorted(
+unique := stream.SortedBy(
     stream.Distinct(stream.FromSlice([]int{3, 1, 2, 1, 3})),
+    comparator.Natural[int](),
 ).ToSlice() // [1 2 3]
 
 // Pre-size the internal buffer for large streams.
@@ -209,10 +213,13 @@ fmt.Println(empty)   // Optional[empty]
 ### Heap
 
 ```go
-import "github.com/halissontorres/go-bag/pkg/heap"
+import (
+    "github.com/halissontorres/go-bag/pkg/comparator"
+    "github.com/halissontorres/go-bag/pkg/heap"
+)
 
-// Works with any cmp.Ordered type: int, float64, string, …
-h := heap.New[int]()
+// Create a Min-Heap (default: natural ascending order).
+h := heap.New(comparator.Natural[int]())
 
 h.Push(50)
 h.Push(10)
@@ -230,36 +237,107 @@ v, _ = h.Pop()  // 10
 fmt.Println(h.Len()) // 3
 
 // Works with strings too — ordering is lexicographic.
-words := heap.New[string]()
+words := heap.New(comparator.Natural[string]())
 words.Push("Zebra")
 words.Push("Abacaxi")
 words.Push("Banana")
 first, _ := words.Pop() // "Abacaxi"
 
-// Pop and Peek return an error when the heap is empty.
-empty := heap.New[float64]()
-_, err := empty.Pop() // err: "empty heap"
-
-// Thread-safe variant — same API, protected by a sync.RWMutex.
-sh := heap.NewSync[int]()
-sh.Push(3)
-sh.Push(1)
-sh.Push(2)
-min, _ = sh.Pop() // 1
-
-// Functional options: Min-Heap (default), Max-Heap, or custom comparator.
-maxH := heap.New[int](heap.WithMaxHeap[int]())
+// Max-Heap: use Reverse.
+maxH := heap.New(comparator.Reverse[int]())
 maxH.Push(10); maxH.Push(30); maxH.Push(20)
 top, _ := maxH.Pop() // 30
 
-byLen := heap.New[string](heap.WithLessFunc(func(a, b string) bool {
+// Custom comparator: order by string length.
+byLen := heap.New(comparator.Comparator[string](func(a, b string) bool {
     return len(a) < len(b)
 }))
 byLen.Push("go"); byLen.Push("rust"); byLen.Push("c")
 shortest, _ := byLen.Pop() // "c"
+
+// Pop and Peek return an error when the heap is empty.
+empty := heap.New(comparator.Natural[float64]())
+_, err := empty.Pop() // err: "empty heap"
+
+// Thread-safe variant — same API, protected by a sync.RWMutex.
+sh := heap.NewSync(comparator.Natural[int]())
+sh.Push(3)
+sh.Push(1)
+sh.Push(2)
+min, _ = sh.Pop() // 1
 ```
 
-> **Note:** `Heap` defaults to a Min-Heap — `Pop` returns the smallest element. Use `WithMaxHeap` or `WithLessFunc` to change the ordering. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
+> **Note:** `Heap` requires a `Comparator` to define ordering — use `comparator.Natural` for ascending or `comparator.Reverse` for descending. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
+
+### Custom ordering with Comparator
+
+All ordered collections (`Heap`, `BTreeSet`, `BTreeMap`, and `Stream.SortedBy`) accept a `comparator.Comparator[T]` that defines element ordering. The `comparator` package provides built-in helpers and a chaining API for multi-criterion ordering.
+
+```go
+import "github.com/halissontorres/go-bag/pkg/comparator"
+```
+
+#### Built-in helpers
+
+```go
+// Natural ascending order for any cmp.Ordered type.
+cmp := comparator.Natural[int]()    // a < b
+rev := comparator.Reverse[int]()    // a > b (descending)
+
+// Extract a key from a struct for comparison.
+type Task struct {
+    Name     string
+    Priority int
+}
+byPriority := comparator.ByField(func(t Task) int { return t.Priority })
+byName     := comparator.ByField(func(t Task) string { return t.Name })
+```
+
+#### Multi-criterion ordering with Then
+
+```go
+// Priority descending, then name ascending.
+ordered := comparator.Reverse[int]().
+    Then(comparator.Natural[string]())
+
+// Applied to structs via ByField:
+byPriorityDesc := comparator.ByField(func(t Task) int { return -t.Priority })
+byPriorityThenName := byPriorityDesc.Then(byName)
+```
+
+#### Using Comparators with collections
+
+```go
+// Heap ordered by struct field.
+taskHeap := heap.New(comparator.ByField(func(t Task) int { return t.Priority }))
+taskHeap.Push(Task{"write docs", 3})
+taskHeap.Push(Task{"fix bug", 1})
+
+// BTreeSet with multi-criterion ordering.
+set := tree.NewBTreeSet(
+    comparator.ByField(func(t Task) int { return t.Priority }).
+        Then(comparator.ByField(func(t Task) string { return t.Name })),
+)
+
+// BTreeMap with struct keys ordered by name.
+m := tree.NewBTreeMap[Task, string](
+    comparator.ByField(func(t Task) string { return t.Name }),
+)
+m.Put(Task{"fix bug", 1}, "open")
+
+// Stream sorted by priority, then by name.
+stream.SortedBy(stream.FromSlice(tasks), byPriority.Then(byName))
+```
+
+#### External types (time.Time, net.IP)
+
+```go
+eventHeap := heap.New(comparator.Comparator[time.Time](
+    func(a, b time.Time) bool { return a.Before(b) },
+))
+```
+
+> **Note:** The `Comparator` must be **consistent** — if `cmp(a,b)` is true, then `cmp(b,a)` must be false. Two elements are considered equal when neither `cmp(a,b)` nor `cmp(b,a)` is true.
 
 ### Queue
 
@@ -449,10 +527,12 @@ fmt.Println(es.String())   // {0}
 ### BTreeSet
 
 ```go
-import "github.com/halissontorres/go-bag/pkg/tree"
+import (
+    "github.com/halissontorres/go-bag/pkg/comparator"
+    "github.com/halissontorres/go-bag/pkg/tree"
+)
 
-// Works with any cmp.Ordered type: int, float64, string, …
-s := tree.NewBTreeSet[int]()
+s := tree.NewBTreeSet(comparator.Natural[int]())
 s.Add(5)
 s.Add(3)
 s.Add(8)
@@ -486,16 +566,19 @@ fmt.Println(s.Elements()) // [1 5 8]
 // Custom minimum degree via functional option (controls tree fanout).
 // Each node holds between t-1 and 2t-1 keys; higher values reduce height
 // but increase per-node memory usage.
-large := tree.NewBTreeSet[string](tree.WithMinDegree(16))
+large := tree.NewBTreeSet(comparator.Natural[string](), tree.WithMinDegree(16))
 _ = large
 ```
 
 ### BTreeMap
 
 ```go
-import "github.com/halissontorres/go-bag/pkg/tree"
+import (
+    "github.com/halissontorres/go-bag/pkg/comparator"
+    "github.com/halissontorres/go-bag/pkg/tree"
+)
 
-m := tree.NewBTreeMap[string, int]()
+m := tree.NewBTreeMap[string, int](comparator.Natural[string]())
 m.Put("banana", 2)
 m.Put("apple", 5)
 m.Put("cherry", 1)
@@ -529,7 +612,7 @@ m.Remove("banana")
 fmt.Println(m.Len()) // 2
 
 // Custom minimum degree via functional option.
-wide := tree.NewBTreeMap[int, string](tree.WithMinDegree(8))
+wide := tree.NewBTreeMap[int, string](comparator.Natural[int](), tree.WithMinDegree(8))
 _ = wide
 ```
 
@@ -680,9 +763,10 @@ go test -bench=. -benchmem ./...
 ```
 go-bag/
 ├── pkg/
+│   ├── comparator/ # Comparator[T] — custom ordering
 │   ├── enum/    # Enum code generator (Generate, EnumInfo)
 │   ├── graph/   # DAG — directed acyclic graph
-│   ├── heap/    # Heap, SyncHeap (min-heap)
+│   ├── heap/    # Heap, SyncHeap (priority queue)
 │   ├── list/    # LinkedList, SyncLinkedList
 │   ├── opt/     # Optional[T]
 │   ├── queue/   # Queue, SyncQueue, Deque, SyncDeque

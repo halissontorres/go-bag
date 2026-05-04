@@ -1,17 +1,17 @@
 package tree
 
-import "cmp"
+import "github.com/halissontorres/go-bag/pkg/comparator"
 
 const defaultMinDegree = 2 // minimum number of children (t)
 
 // bnode represents a node of the B-Tree.
-type bnode[K cmp.Ordered] struct {
+type bnode[K any] struct {
 	keys     []K
 	children []*bnode[K]
 	isLeaf   bool
 }
 
-func newBNode[K cmp.Ordered](t int, leaf bool) *bnode[K] {
+func newBNode[K any](t int, leaf bool) *bnode[K] {
 	return &bnode[K]{
 		keys:     make([]K, 0, 2*t-1),
 		children: make([]*bnode[K], 0, 2*t),
@@ -20,19 +20,21 @@ func newBNode[K cmp.Ordered](t int, leaf bool) *bnode[K] {
 }
 
 // btree is the unexported base structure used by BTreeSet and BTreeMap.
-type btree[K cmp.Ordered] struct {
+type btree[K any] struct {
 	root      *bnode[K]
 	minDegree int // t (minimum children = t, maximum = 2t)
 	size      int
+	less      comparator.Comparator[K]
 }
 
-func newBTree[K cmp.Ordered](minDegree int) *btree[K] {
+func newBTree[K any](minDegree int, less comparator.Comparator[K]) *btree[K] {
 	if minDegree < 2 {
 		minDegree = 2
 	}
 	return &btree[K]{
 		root:      newBNode[K](minDegree, true),
 		minDegree: minDegree,
+		less:      less,
 	}
 }
 
@@ -45,10 +47,10 @@ func (t *btree[K]) search(key K) (*bnode[K], int) {
 
 func (t *btree[K]) searchNode(x *bnode[K], key K) (*bnode[K], int) {
 	i := 0
-	for i < len(x.keys) && key > x.keys[i] {
+	for i < len(x.keys) && t.less(x.keys[i], key) {
 		i++
 	}
-	if i < len(x.keys) && key == x.keys[i] {
+	if i < len(x.keys) && !t.less(key, x.keys[i]) && !t.less(x.keys[i], key) {
 		return x, i
 	}
 	if x.isLeaf {
@@ -76,14 +78,13 @@ func (t *btree[K]) insert(key K) bool {
 func (t *btree[K]) insertNonFull(x *bnode[K], key K) bool {
 	i := len(x.keys) - 1
 	if x.isLeaf {
-		// Detect duplicates.
 		for j := 0; j < len(x.keys); j++ {
-			if x.keys[j] == key {
+			if !t.less(x.keys[j], key) && !t.less(key, x.keys[j]) {
 				return false
 			}
 		}
 		x.keys = append(x.keys, key) // placeholder slot
-		for i >= 0 && key < x.keys[i] {
+		for i >= 0 && t.less(key, x.keys[i]) {
 			x.keys[i+1] = x.keys[i]
 			i--
 		}
@@ -91,13 +92,13 @@ func (t *btree[K]) insertNonFull(x *bnode[K], key K) bool {
 		t.size++
 		return true
 	}
-	for i >= 0 && key < x.keys[i] {
+	for i >= 0 && t.less(key, x.keys[i]) {
 		i--
 	}
 	i++
 	if len(x.children[i].keys) == 2*t.minDegree-1 {
 		t.splitChild(x, i)
-		if key > x.keys[i] {
+		if t.less(x.keys[i], key) {
 			i++
 		}
 	}
@@ -105,7 +106,7 @@ func (t *btree[K]) insertNonFull(x *bnode[K], key K) bool {
 }
 
 func (t *btree[K]) splitChild(parent *bnode[K], i int) {
-	degree := t.minDegree // do not shadow the receiver
+	degree := t.minDegree
 	y := parent.children[i]
 	z := newBNode[K](degree, y.isLeaf)
 
@@ -177,11 +178,11 @@ func (t *btree[K]) delete(key K) bool {
 func (t *btree[K]) deleteFromNode(x *bnode[K], key K) bool {
 	degree := t.minDegree
 	i := 0
-	for i < len(x.keys) && key > x.keys[i] {
+	for i < len(x.keys) && t.less(x.keys[i], key) {
 		i++
 	}
 	// Case 1: the key is in x.
-	if i < len(x.keys) && key == x.keys[i] {
+	if i < len(x.keys) && !t.less(key, x.keys[i]) && !t.less(x.keys[i], key) {
 		if x.isLeaf {
 			// Simple leaf removal.
 			x.keys = append(x.keys[:i], x.keys[i+1:]...)
