@@ -16,14 +16,14 @@
 
 ## Overview
 
-Gobag brings expressive, type-safe abstractions to everyday Go programming. It builds on Go 1.18+ generics to deliver a coherent set of collection types — lists, queues, deques, stacks, sets, ordered trees, and enum-aware bitmaps — together with a small code generator that promotes plain Go constants to first-class enums with parsing, JSON marshalling, and database integration.
+Gobag brings expressive, type-safe abstractions to everyday Go programming. It builds on Go 1.18+ generics to deliver a coherent set of collection types — lists, queues, deques, stacks, sets, ordered trees, LRU caches, and enum-aware bitmaps — together with a small code generator that promotes plain Go constants to first-class enums with parsing, JSON marshalling, and database integration.
 
 Every collection ships in two flavors: a fast, single-threaded core type and a `Sync*` wrapper that adds a `sync.RWMutex` for safe concurrent use.
 
 ## Features
 
-- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, and `DAG`, all parameterized on `any` or `comparable` as appropriate, with custom ordering via `comparator.Comparator`.
-- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, and `SyncSet` types for safe access from multiple goroutines.
+- **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, `DAG`, and `LRUCache`, all parameterized on `any` or `comparable` as appropriate, with custom ordering via `comparator.Comparator`.
+- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, `SyncSet`, and `SyncLRUCache` types for safe access from multiple goroutines.
 - **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `DistinctBy`, `SortedBy`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
 - **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
@@ -268,6 +268,63 @@ min, _ = sh.Pop() // 1
 ```
 
 > **Note:** `Heap` requires a `Comparator` to define ordering — use `comparator.Natural` for ascending or `comparator.Reverse` for descending. Composite operations (e.g. peek-then-pop) are not atomic even on `SyncHeap`.
+
+### LRU Cache
+
+```go
+import "github.com/halissontorres/go-bag/pkg/cache"
+
+// Create a cache with mandatory capacity.
+c := cache.New[string, int](cache.WithCapacity[string, int](3))
+
+c.Put("a", 1)
+c.Put("b", 2)
+c.Put("c", 3)
+
+v, ok := c.Get("a") // 1, true — and "a" is now most recently used
+_, _ = v, ok
+
+// Peek returns the value without updating access order.
+v, ok = c.Peek("b") // 2, true
+
+// When at capacity, the least-recently-used entry is evicted.
+c.Put("d", 4) // evicts "c" (LRU after Get("a"))
+
+fmt.Println(c.Contains("c")) // false
+fmt.Println(c.Len())         // 3
+fmt.Println(c.Cap())         // 3
+
+// Keys and Values are returned from most to least recently used.
+fmt.Println(c.Keys())   // [d a b]
+fmt.Println(c.Values()) // [4 1 2]
+
+c.Remove("a")
+c.Clear()
+
+// Resize the cache — shrinking evicts excess LRU entries.
+c2 := cache.New[int, string](cache.WithCapacity[int, string](5))
+c2.Put(1, "a"); c2.Put(2, "b"); c2.Put(3, "c")
+c2.Resize(1) // evicts 1 and 2
+fmt.Println(c2.Keys()) // [3]
+
+// OnEvict callback fires on eviction, removal, and clear.
+c3 := cache.New[int, string](
+    cache.WithCapacity[int, string](2),
+    cache.WithOnEvict[int, string](func(k int, v string) {
+        fmt.Printf("evicted: %d=%s\n", k, v)
+    }),
+)
+c3.Put(1, "a")
+c3.Put(2, "b")
+c3.Put(3, "c") // prints: evicted: 1=a
+
+// Thread-safe variant — same API, protected by a sync.RWMutex.
+sc := cache.NewSync[int, string](cache.WithCapacity[int, string](100))
+sc.Put(42, "answer")
+v, ok = sc.Get(42) // "answer", true
+```
+
+> **Note:** `Get` promotes the entry to MRU even on the `SyncLRUCache`. The sync variant uses a full write lock for `Get` because it mutates the internal list.
 
 ### Custom ordering with Comparator
 
@@ -763,6 +820,7 @@ go test -bench=. -benchmem ./...
 ```
 go-bag/
 ├── pkg/
+│   ├── cache/   # LRUCache, SyncLRUCache
 │   ├── comparator/ # Comparator[T] — custom ordering
 │   ├── enum/    # Enum code generator (Generate, EnumInfo)
 │   ├── graph/   # DAG — directed acyclic graph
