@@ -16,14 +16,15 @@
 
 ## Overview
 
-Gobag brings expressive, type-safe abstractions to everyday Go programming. It builds on Go 1.18+ generics to deliver a coherent set of collection types — lists, queues, deques, stacks, sets, ordered trees, LRU caches, and enum-aware bitmaps — together with a small code generator that promotes plain Go constants to first-class enums with parsing, JSON marshalling, and database integration.
+Gobag brings expressive, type-safe abstractions to everyday Go programming. It builds on Go 1.18+ generics to deliver a coherent set of collection types — lists, queues, deques, stacks, sets, ordered trees, LRU caches, probabilistic sketches, and enum-aware bitmaps — together with a small code generator that promotes plain Go constants to first-class enums with parsing, JSON marshalling, and database integration.
 
 Every collection ships in two flavors: a fast, single-threaded core type and a `Sync*` wrapper that adds a `sync.RWMutex` for safe concurrent use.
 
 ## Features
 
 - **Generic collections.** `LinkedList`, `Queue`, `Deque`, `Stack`, `Heap`, `Set`, `BTreeSet`, `BTreeMap`, `DAG`, and `LRUCache`, all parameterized on `any` or `comparable` as appropriate, with custom ordering via `comparator.Comparator`.
-- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, `SyncSet`, and `SyncLRUCache` types for safe access from multiple goroutines.
+- **Probabilistic sketches.** `CountMin` for frequency estimation with ε×N error bounds, and `HyperLogLog` for cardinality estimation with ~1% error in ~16 KB. Thread-safe variants `SyncCountMin` and `SyncHyperLogLog` included.
+- **Concurrency-ready.** Drop-in `SyncLinkedList`, `SyncQueue`, `SyncDeque`, `SyncStack`, `SyncHeap`, `SyncSet`, `SyncLRUCache`, `SyncCountMin`, and `SyncHyperLogLog` types for safe access from multiple goroutines.
 - **Lazy streams.** `Stream[T]` with a pipeline-style API — `Filter`, `Map`, `FlatMap`, `Distinct`, `DistinctBy`, `SortedBy`, `Limit`, `Skip`, `Concat`, `Peek` — plus terminal operations `ToSlice`, `ForEach`, `Count`, `Any`, `All`, `Reduce`, and `FindFirst`. Streams are single-pass and not goroutine-safe.
 - **Optional.** `Optional[T]` is a type-safe container that makes absent values explicit — no nil, no sentinel. Supports `Of`, `OfPtr`, `OrElse`, `OrElseGet`, `IfPresent`, `Filter`, `Map`, and `FlatMap`.
 - **Bitmap-backed `EnumSet`.** O(1) membership, union, intersection, and difference for any type that exposes an `Index() int` method.
@@ -581,6 +582,91 @@ fmt.Println(a.Equal(b))    // false
 fmt.Println(es.String())   // {0}
 ```
 
+### Count-Min Sketch
+
+```go
+import (
+    "hash/fnv"
+
+    "github.com/halissontorres/go-bag/pkg/sketch"
+)
+
+// Count-Min Sketch estimates item frequencies with bounded error.
+// epsilon controls relative error; delta controls the error probability.
+hash := func(s string) uint64 {
+    h := fnv.New64a()
+    h.Write([]byte(s))
+    return h.Sum64()
+}
+cm := sketch.NewCountMin(0.01, 0.001, hash)
+
+cm.Increment("login")
+cm.Increment("login")
+cm.Increment("login")
+cm.Update("checkout", 5)
+
+fmt.Println(cm.Estimate("login"))    // >= 3 (never underestimates)
+fmt.Println(cm.Estimate("checkout")) // >= 5
+fmt.Println(cm.Estimate("unknown"))  // ~0 (may overestimate slightly)
+fmt.Println(cm.Total())              // 8
+
+// Thread-safe variant for concurrent access.
+scm := sketch.NewSyncCountMin(0.01, 0.001, hash)
+scm.Increment("concurrent")
+fmt.Println(scm.Estimate("concurrent")) // >= 1
+```
+
+> **Note:** Count-Min never underestimates. The estimate for any item is at most `true + ε×N` with probability `1 − δ`, where `N` is the sum of all counts.
+
+### HyperLogLog
+
+```go
+import (
+    "hash/fnv"
+
+    "github.com/halissontorres/go-bag/pkg/sketch"
+)
+
+// HyperLogLog estimates the number of distinct elements (cardinality).
+// precision controls the accuracy/memory trade-off (valid range: 4–18).
+//
+//   precision | registers | memory | error
+//      4      |    16     |  16 B  | ~26%
+//      8      |   256     | 256 B  | ~6.5%
+//     12      |  4096     |  4 KB  | ~1.6%
+//     14      | 16384     | 16 KB  | ~0.81%
+//     16      | 65536     | 64 KB  | ~0.40%
+
+hash := func(s string) uint64 {
+    h := fnv.New64a()
+    h.Write([]byte(s))
+    return h.Sum64()
+}
+hll := sketch.NewHyperLogLog(14, hash)
+
+hll.Add("alice")
+hll.Add("bob")
+hll.Add("alice") // duplicate — ignored
+hll.Add("carol")
+
+fmt.Println(hll.Count()) // ~3 (approximate distinct count)
+
+// Union of two sketches (both must have the same precision).
+visitors := sketch.NewHyperLogLog(14, hash)
+visitors.Add("dave")
+visitors.Add("eve")
+
+hll.Merge(visitors)
+fmt.Println(hll.Count()) // ~5
+
+// Thread-safe variant.
+shll := sketch.NewSyncHyperLogLog(14, hash)
+shll.Add("item")
+fmt.Println(shll.Count()) // ~1
+```
+
+> **Note:** HyperLogLog estimates are approximate. With precision=14, expect ~0.81% relative error. Merge is useful for combining sketches from different partitions or replicas.
+
 ### BTreeSet
 
 ```go
@@ -829,6 +915,7 @@ go-bag/
 │   ├── opt/     # Optional[T]
 │   ├── queue/   # Queue, SyncQueue, Deque, SyncDeque
 │   ├── set/     # Set, SyncSet, EnumSet
+│   ├── sketch/  # CountMin, SyncCountMin, HyperLogLog, SyncHyperLogLog
 │   ├── stack/   # Stack, SyncStack
 │   ├── stream/  # Stream[T] — lazy pipeline API
 │   └── tree/    # BTreeSet, BTreeMap, BTreeIterator
